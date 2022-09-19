@@ -1,0 +1,10 @@
+[package]
+name = "printlib"
+version = "0.0.1"
+edition = "2021"
+authors = ["YdrMaster <ydrml@hotmail.com>"]
+
+[dependencies]
+log = "0.4.17"
+spin = "0.9.4"
+lazy_static = { version = "1.4.0", features = ["spin_no_std"] }

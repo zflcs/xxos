@@ -1,0 +1,10 @@
+[workspace]
+members = [
+    "xtask",
+    "kernel",
+]
+default-members = ["xtask"]
+
+[profile.release]
+opt-level = "s"
+debug = true
