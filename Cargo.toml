@@ -2,6 +2,9 @@
 members = [
     "xtask",
     "kernel",
+    "printlib",
+    "up",
+    "task-manage"
 ]
 default-members = ["xtask"]
 

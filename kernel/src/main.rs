@@ -4,12 +4,15 @@
 #![deny(warnings)]
 
 mod console;
+// mod sync;
 
 use sbi_rt::*;
 use printlib::*;
-use core::arch::asm;
-use core::sync::atomic::{AtomicBool, Ordering};
-use core::hint;
+use core::{
+    arch::asm,
+    sync::atomic::{AtomicBool, Ordering},
+    hint
+};
 
 
 /// Rust 异常处理函数，以异常方式关机。
@@ -92,6 +95,7 @@ static AP_CAN_INIT: AtomicBool = AtomicBool::new(false);
 extern "C" fn primary_main() -> ! {
     zero_bss();
     console::init_console();
+    log::error!("hart_id {}", hart_id());
     hart_start();
     AP_CAN_INIT.store(true, Ordering::Relaxed);
     loop {
