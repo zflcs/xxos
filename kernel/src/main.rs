@@ -1,10 +1,16 @@
 #![no_std]
 #![no_main]
-#![feature(naked_functions, asm_sym, asm_const)]
+#![feature(naked_functions, asm_sym, asm_const, default_alloc_error_handler)]
 #![deny(warnings)]
 
 mod console;
-// mod sync;
+mod mm;
+mod task;
+mod syscall;
+mod processor;
+
+extern crate alloc;
+
 
 use sbi_rt::*;
 use printlib::*;
@@ -13,6 +19,16 @@ use core::{
     sync::atomic::{AtomicBool, Ordering},
     hint
 };
+use spin::Lazy;
+use alloc::collections::BTreeMap;
+use core::ffi::CStr;
+use processor::init_processor;
+use kernel_vm::{
+    page_table::{PPN, Sv39, VmFlags, MmuMeta},
+};
+use processor::PROCESSOR;
+use mm::kernel_space;
+
 
 
 /// Rust 异常处理函数，以异常方式关机。
@@ -21,6 +37,27 @@ fn panic(_: &core::panic::PanicInfo) -> ! {
     system_reset(RESET_TYPE_SHUTDOWN, RESET_REASON_SYSTEM_FAILURE);
     unreachable!()
 }
+
+
+/// 加载用户进程。
+static APPS: Lazy<BTreeMap<&'static str, &'static [u8]>> = Lazy::new(|| {
+    extern "C" {
+        static apps: utils::AppMeta;
+        static app_names: u8;
+    }
+    unsafe {
+        apps.iter_elf()
+            .scan(&app_names as *const _ as usize, |addr, data| {
+                let name = CStr::from_ptr(*addr as _).to_str().unwrap();
+                *addr += name.as_bytes().len() + 1;
+                Some((name, data))
+            })
+    }
+    .collect()
+});
+
+// 应用程序内联进来。
+core::arch::global_asm!(include_str!(env!("APP_ASM")));
 
 /// Supervisor 汇编入口。
 ///
@@ -49,18 +86,6 @@ unsafe extern "C" fn _start(hart_id: usize) -> ! {
         secondary_main  = sym secondary_main,
         options(noreturn),
     )
-}
-
-/// bss 段清零。
-///
-/// 需要定义 sbss 和 ebss 全局符号才能定位 bss。
-#[inline]
-fn zero_bss() {
-    extern "C" {
-        static mut sbss: u64;
-        static mut ebss: u64;
-    }
-    unsafe { r0::zero_bss(&mut sbss, &mut ebss) };
 }
 
 /// hart_id
@@ -93,11 +118,34 @@ static AP_CAN_INIT: AtomicBool = AtomicBool::new(false);
 
 /// 主核初始化
 extern "C" fn primary_main() -> ! {
-    zero_bss();
+    let layout = linker::KernelLayout::locate();
+    // bss 段清零
+    unsafe { layout.zero_bss() };
+    // 初始化 console
     console::init_console();
+    // 初始化 syscall
+    syscall::init_syscall();
+    // 初始化内核堆
+    mm::init();
+    mm::test();
     log::error!("hart_id {}", hart_id());
     hart_start();
     AP_CAN_INIT.store(true, Ordering::Relaxed);
+    init_processor();
+    // 建立内核地址空间
+    let mut ks = kernel_space(layout);
+    let tramp = (
+        PPN::<Sv39>::new(unsafe { &PROCESSOR.portal } as *const _ as usize >> Sv39::PAGE_BITS),
+        VmFlags::build_from_str("XWRV"),
+    );
+    // 传送门映射到所有地址空间
+    ks.map_portal(tramp);
+    // println!("{}", env!("APP_ASM"));
+    // println!("{}", include_str!(env!("APP_ASM")));
+
+    println!("/**** APPS ****");
+    APPS.keys().for_each(|app| println!("{app}"));
+    println!("**************/");
     loop {
         
     }
@@ -107,7 +155,7 @@ extern "C" fn primary_main() -> ! {
 
 /// init_other_hart
 /// 
-/// 初始化其他的硬件核，需要等待主核初始化之后，发送中断之后才可以初始化，在这之前一直自旋等待
+/// 初始化其他的核，需要等待主核初始化之后，通过 hsm start 才可以初始化，在这之前一直自旋等待
 extern "C" fn secondary_main() {
     while !AP_CAN_INIT.load(Ordering::Relaxed) {
         hint::spin_loop();

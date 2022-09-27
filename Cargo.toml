@@ -4,7 +4,13 @@ members = [
     "kernel",
     "printlib",
     "up",
-    "task-manage"
+    "task-manage",
+    "kernel-context",
+    "kernel-vm",
+    "user",
+    "syscall",
+    "utils",
+    "linker",
 ]
 default-members = ["xtask"]
 

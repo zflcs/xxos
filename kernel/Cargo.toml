@@ -7,9 +7,22 @@ edition = "2021"
 
 [dependencies]
 sbi-rt = { git = "https://github.com/rustsbi/sbi-rt", branch = "dev" }
-printlib = { path = "../printlib" }
-up = { path = "../up" }
-r0 = "1.0.0"
-buddy-allocator = { git = "https://github.com/YdrMaster/buddy-allocator", rev = "fae1979" }
+customizable-buddy = "0.0.2"
 riscv = "0.8.0"
+spin = "0.9.4"
+xmas-elf = "0.8.0"
+
+kernel-vm = { path = "../kernel-vm"}
+kernel-context = { path = "../kernel-context"}
+syscall = { path = "../syscall", features = ["kernel"] }
+task-manage ={ path = "../task-manage"}
+utils = { path = "../utils"}
+linker = { path = "../linker" }
+printlib = { path = "../printlib" }
+up ={ path = "../up"}
+
+
+[build-dependencies]
+linker = { path = "../linker" }
+
 

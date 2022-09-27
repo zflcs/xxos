@@ -1,3 +1,5 @@
+mod user;
+
 #[macro_use]
 extern crate clap;
 
@@ -5,6 +7,8 @@ use clap::Parser;
 use command_ext::{BinUtil, Cargo, CommandExt, Qemu};
 use once_cell::sync::Lazy;
 use std::{
+    collections::HashMap,
+    ffi::OsString,
     fs,
     path::{Path, PathBuf},
 };
@@ -60,6 +64,16 @@ struct BuildArgs {
 
 impl BuildArgs {
     fn make(&self) -> PathBuf {
+        user::build_for(false);
+        let mut env: HashMap<&str, OsString> = HashMap::new();
+        env.insert(
+            "APP_ASM",
+            TARGET
+                .join("debug")
+                .join("app.asm")
+                .as_os_str()
+                .to_os_string(),
+        );
         let package = self.module.as_ref().unwrap();
         // 生成
         let mut build = Cargo::build();
@@ -75,6 +89,9 @@ impl BuildArgs {
                 cargo.release();
             })
             .target(TARGET_ARCH);
+        for (key, value) in env {
+            build.env(key, value);
+        }
         build.invoke();
         TARGET
             .join(if self.release { "release" } else { "debug" })

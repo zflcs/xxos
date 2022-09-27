@@ -1,0 +1,10 @@
+[package]
+name = "user_lib"
+version = "0.0.1"
+edition = "2021"
+authors = ["YdrMaster <ydrml@hotmail.com>"]
+
+[dependencies]
+printlib = { path = "../printlib" }
+syscall = { path = "../syscall", features = ["user"] }
+customizable-buddy = "0.0.2"
