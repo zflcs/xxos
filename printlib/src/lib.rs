@@ -7,8 +7,7 @@ use core::{
     fmt::{Arguments, Write},
     str::FromStr,
 };
-use spin::{Once, Mutex};
-use lazy_static::lazy_static;
+use spin::Once;
 
 /// 向用户提供 `log`。
 pub extern crate log;
@@ -69,16 +68,7 @@ pub fn test_log() {
 #[doc(hidden)]
 #[inline]
 pub fn _print(args: Arguments) {
-    LOGGER.lock().write_fmt(args).unwrap();
-}
-
-/// 打印换行。
-///
-/// 给宏用的，用户不会直接调它。
-#[doc(hidden)]
-#[inline]
-pub fn _println(args: Arguments) {
-    LOGGER.lock().write_fmt(core::format_args!("{}\n", args)).unwrap();
+    Logger.write_fmt(args).unwrap();
 }
 
 /// 格式化打印。
@@ -94,16 +84,13 @@ macro_rules! print {
 macro_rules! println {
     () => ($crate::print!("\n"));
     ($($arg:tt)*) => {{
-        $crate::_println(core::format_args!($($arg)*));
+        $crate::_print(core::format_args!($($arg)*));
+        $crate::println!();
     }}
 }
 
 /// 这个 Unit struct 是 `core::fmt` 要求的。
 struct Logger;
-
-lazy_static! {
-    static ref LOGGER: Mutex<Logger> = Mutex::new(Logger {});
-}
 
 /// 实现 `core::fmt::Write` trait，格式化的基础。
 impl Write for Logger {

@@ -1,16 +1,18 @@
-use crate::mm::{PAGE, Sv39Manager};
+﻿use crate::{mm::PAGE, Sv39Manager};
+use alloc::vec::Vec;
+use core::sync::atomic::{AtomicUsize, Ordering};
 use core::{alloc::Layout, str::FromStr};
-use kernel_context::{foreign::ForeignContext, LocalContext};
+use easy_fs::FileHandle;
+use kernel_context::{foreign::ForeignContext, foreign::ForeignPortal, LocalContext};
 use kernel_vm::{
     page_table::{MmuMeta, Sv39, VAddr, VmFlags, PPN, VPN},
     AddressSpace,
 };
+use spin::Mutex;
 use xmas_elf::{
     header::{self, HeaderPt2, Machine},
     program, ElfFile,
 };
-use alloc::vec::Vec;
-use core::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Eq, PartialEq, Debug, Clone, Copy, Hash, Ord, PartialOrd)]
 pub struct TaskId(usize);
@@ -29,7 +31,7 @@ impl TaskId {
 
     pub fn get_val(&self) -> usize {
         self.0
-    } 
+    }
 }
 
 /// 进程。
@@ -41,10 +43,12 @@ pub struct Process {
     pub children: Vec<TaskId>,
     pub context: ForeignContext,
     pub address_space: AddressSpace<Sv39, Sv39Manager>,
+
+    // 文件描述符表
+    pub fd_table: Vec<Option<Mutex<FileHandle>>>,
 }
 
 impl Process {
-
     pub fn exec(&mut self, elf: ElfFile) {
         let proc = Process::from_elf(elf).unwrap();
         let tramp = self.address_space.tramp;
@@ -52,7 +56,6 @@ impl Process {
         self.address_space.map_portal(tramp);
         self.context = proc.context;
     }
-
 
     pub fn fork(&mut self) -> Option<Process> {
         // 子进程 pid
@@ -64,17 +67,24 @@ impl Process {
         // 复制父进程上下文
         let context = self.context.context.clone();
         let satp = (8 << 60) | address_space.root_ppn().val();
-        let foreign_ctx = ForeignContext {
-            context,
-            satp,
-        };
+        let foreign_ctx = ForeignContext { context, satp };
         self.children.push(pid);
-        Some( Self {
+        // 复制父进程文件符描述表
+        let mut new_fd_table: Vec<Option<Mutex<FileHandle>>> = Vec::new();
+        for fd in self.fd_table.iter_mut() {
+            if let Some(file) = fd {
+                new_fd_table.push(Some(Mutex::new(file.get_mut().clone())));
+            } else {
+                new_fd_table.push(None);
+            }
+        }
+        Some(Self {
             pid,
             parent: self.pid,
             children: Vec::new(),
             context: foreign_ctx,
             address_space,
+            fd_table: new_fd_table,
         })
     }
 
@@ -92,7 +102,7 @@ impl Process {
         const PAGE_SIZE: usize = 1 << Sv39::PAGE_BITS;
         const PAGE_MASK: usize = PAGE_SIZE - 1;
 
-        let mut address_space: AddressSpace<Sv39, Sv39Manager> = AddressSpace::new();
+        let mut address_space = AddressSpace::new();
         for program in elf.program_iter() {
             if !matches!(program.get_type(), Ok(program::Type::Load)) {
                 continue;
@@ -142,10 +152,16 @@ impl Process {
             children: Vec::new(),
             context: ForeignContext { context, satp },
             address_space,
+            fd_table: vec![
+                // Stdin
+                Some(Mutex::new(FileHandle::empty(true, false))),
+                // Stdout
+                Some(Mutex::new(FileHandle::empty(false, true))),
+            ],
         })
     }
 
-    // pub fn execute(&mut self, portal: &mut ForeignPortal, portal_transit: usize) {
-    //     unsafe { self.context.execute(portal, portal_transit) };
-    // }
+    pub fn execute(&mut self, portal: &mut ForeignPortal, portal_transit: usize) {
+        unsafe { self.context.execute(portal, portal_transit) };
+    }
 }

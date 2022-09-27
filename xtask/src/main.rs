@@ -1,3 +1,4 @@
+mod fs_pack;
 mod user;
 
 #[macro_use]
@@ -7,9 +8,6 @@ use clap::Parser;
 use command_ext::{BinUtil, Cargo, CommandExt, Qemu};
 use once_cell::sync::Lazy;
 use std::{
-    collections::HashMap,
-    ffi::OsString,
-    fs,
     path::{Path, PathBuf},
 };
 
@@ -31,7 +29,6 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     Make(BuildArgs),
-    Asm(AsmArgs),
     Qemu(QemuArgs),
 }
 
@@ -41,14 +38,13 @@ fn main() {
         Make(args) => {
             let _ = args.make();
         }
-        Asm(args) => args.dump(),
         Qemu(args) => args.run(),
     }
 }
 
 #[derive(Args, Default)]
 struct BuildArgs {
-    /// module
+    /// Character.
     #[clap(short, long)]
     module: Option<String>,
     /// features
@@ -65,20 +61,11 @@ struct BuildArgs {
 impl BuildArgs {
     fn make(&self) -> PathBuf {
         user::build_for(false);
-        let mut env: HashMap<&str, OsString> = HashMap::new();
-        env.insert(
-            "APP_ASM",
-            TARGET
-                .join("debug")
-                .join("app.asm")
-                .as_os_str()
-                .to_os_string(),
-        );
         let package = self.module.as_ref().unwrap();
         // 生成
         let mut build = Cargo::build();
         build
-            .package(&package)
+            .package(package)
             .optional(&self.features, |cargo, features| {
                 cargo.features(false, features.split_whitespace());
             })
@@ -89,9 +76,6 @@ impl BuildArgs {
                 cargo.release();
             })
             .target(TARGET_ARCH);
-        for (key, value) in env {
-            build.env(key, value);
-        }
         build.invoke();
         TARGET
             .join(if self.release { "release" } else { "debug" })
@@ -99,26 +83,6 @@ impl BuildArgs {
     }
 }
 
-#[derive(Args)]
-struct AsmArgs {
-    #[clap(flatten)]
-    build: BuildArgs,
-    /// Output file.
-    #[clap(short, long)]
-    console: Option<String>,
-}
-
-impl AsmArgs {
-    fn dump(self) {
-        let elf = self.build.make();
-        let out = Path::new(std::env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .join(self.console.unwrap_or("kernel.asm".to_string()));
-        println!("Asm file dumps to '{}'.", out.display());
-        fs::write(out, BinUtil::objdump().arg(elf).arg("-d").output().stdout).unwrap();
-    }
-}
 
 #[derive(Args)]
 struct QemuArgs {
@@ -141,19 +105,40 @@ impl QemuArgs {
         if let Some(p) = &self.qemu_dir {
             Qemu::search_at(p);
         }
-        Qemu::system("riscv64")
-            .args(&["-machine", "virt"])
+        let mut qemu = Qemu::system("riscv64");
+        qemu.args(&["-machine", "virt"])
+            .arg("-nographic")
             .arg("-bios")
             .arg(PROJECT.join("rustsbi-qemu.bin"))
             .arg("-kernel")
             .arg(objcopy(elf, true))
-            .args(&["-smp", &self.smp.unwrap_or(4).to_string()])
+            .args(&["-smp", &self.smp.unwrap_or(1).to_string()])
             .args(&["-serial", "mon:stdio"])
-            .arg("-nographic")
-            .optional(&self.gdb, |qemu, gdb| {
-                qemu.args(&["-S", "-gdb", &format!("tcp::{gdb}")]);
-            })
-            .invoke();
+            .args(&[
+                "-drive",
+                format!(
+                    "file={},if=none,format=raw,id=x0",
+                    TARGET
+                        .join(if self.build.release {
+                            "release"
+                        } else {
+                            "debug"
+                        })
+                        .join("fs.img")
+                        .into_os_string()
+                        .into_string()
+                        .unwrap()
+                )
+                .as_str(),
+            ])
+            .args(&[
+                "-device",
+                "virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0",
+            ]);
+        qemu.optional(&self.gdb, |qemu, gdb| {
+            qemu.args(&["-S", "-gdb", &format!("tcp::{gdb}")]);
+        })
+        .invoke();
     }
 }
 

@@ -1,8 +1,7 @@
-use crate::{objcopy, PROJECT, TARGET, TARGET_ARCH};
+﻿use crate::{fs_pack::easy_fs_pack, objcopy, PROJECT, TARGET, TARGET_ARCH};
 use command_ext::{Cargo, CommandExt};
 use serde_derive::Deserialize;
-use std::{ffi::OsStr, fs::File, io::Write, path::PathBuf};
-
+use std::{ffi::OsStr, path::PathBuf};
 
 #[derive(Deserialize)]
 struct Apps {
@@ -83,61 +82,14 @@ pub fn build_for(release: bool) {
     if bins.is_empty() {
         return;
     }
-    let asm = TARGET
-        .join(if release { "release" } else { "debug" })
-        .join("app.asm");
-    let mut ld = File::create(asm).unwrap();
-    writeln!(
-        ld,
-        "\
-    .global apps
-    .section .data
-    .align 3
-apps:
-    .quad {base:#x}
-    .quad {step:#x}
-    .quad {}",
-        bins.len(),
+    easy_fs_pack(
+        &cases.cases.unwrap(),
+        TARGET
+            .join(if release { "release" } else { "debug" })
+            .into_os_string()
+            .into_string()
+            .unwrap()
+            .as_str(),
     )
     .unwrap();
-
-    (0..bins.len()).for_each(|i| {
-        writeln!(
-            ld,
-            "\
-    .quad app_{i}_start"
-        )
-        .unwrap()
-    });
-
-    writeln!(
-        ld,
-        "\
-    .quad app_{}_end",
-        bins.len() - 1
-    )
-    .unwrap();
-
-    bins.iter().enumerate().for_each(|(i, path)| {
-        writeln!(
-            ld,
-            "
-app_{i}_start:
-    .incbin {path:?}
-app_{i}_end:",
-        )
-        .unwrap();
-    });
-    writeln!(
-        ld,
-        "
-.align 3
-.section .data
-.global app_names
-app_names:"
-    )
-    .unwrap();
-    bins.iter().enumerate().for_each(|(_, path)| {
-        writeln!(ld, "    .string {:?}", path.file_name().unwrap()).unwrap();
-    });
 }

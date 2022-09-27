@@ -1,4 +1,4 @@
-use crate::task::{Process, TaskId};
+use crate::process::{Process, TaskId};
 use alloc::collections::{BTreeMap, VecDeque};
 use kernel_context::foreign::ForeignPortal;
 use task_manage::{Manage, Processor};
@@ -6,9 +6,12 @@ use task_manage::{Manage, Processor};
 pub static mut PROCESSOR: Processor<Process, TaskId, ProcManager> = Processor::new();
 
 pub fn init_processor() {
+    let manager = ProcManager::new();
+    // 异界传送门
+    let portal = ForeignPortal::new();
     unsafe {
-        PROCESSOR.set_manager(ProcManager::new());
-        PROCESSOR.set_portal(ForeignPortal::new());
+        PROCESSOR.set_manager(manager);
+        PROCESSOR.set_portal(portal);
     }
 }
 

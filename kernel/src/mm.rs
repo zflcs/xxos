@@ -1,12 +1,11 @@
-use alloc::alloc::handle_alloc_error;
-use customizable_buddy::{BuddyAllocator, LinkedListBuddy, UsizeBuddy}; 
+﻿use alloc::alloc::handle_alloc_error;
+use printlib::log;
 use core::{
     alloc::{GlobalAlloc, Layout},
     ptr::NonNull,
 };
-use alloc::vec;
+use customizable_buddy::{BuddyAllocator, LinkedListBuddy, UsizeBuddy};
 use kernel_vm::page_table::{MmuMeta, Sv39};
-use printlib::*;
 
 /// 初始化全局分配器和内核堆分配器。
 pub fn init() {
@@ -14,7 +13,7 @@ pub fn init() {
     #[repr(C, align(4096))]
     pub struct Memory<const N: usize>([u8; N]);
 
-    const MEMORY_SIZE: usize = 512 << Sv39::PAGE_BITS;
+    const MEMORY_SIZE: usize = 4096 << Sv39::PAGE_BITS;
 
     /// 托管空间 1 MiB
     static mut MEMORY: Memory<MEMORY_SIZE> = Memory([0u8; MEMORY_SIZE]);
@@ -45,8 +44,8 @@ pub fn test() {
 }
 
 type MutAllocator<const N: usize> = BuddyAllocator<N, UsizeBuddy, LinkedListBuddy>;
-pub static mut PAGE: MutAllocator<5> = MutAllocator::new();
-static mut HEAP: MutAllocator<32> = MutAllocator::new();
+pub static mut PAGE: MutAllocator<12> = MutAllocator::new();
+pub static mut HEAP: MutAllocator<32> = MutAllocator::new();
 
 struct Global;
 
@@ -71,6 +70,6 @@ unsafe impl GlobalAlloc for Global {
 
     #[inline]
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        HEAP.deallocate(NonNull::new(ptr).unwrap(), layout.size())
+        HEAP.deallocate(NonNull::new(ptr).unwrap(), (layout.size() + 7) & !7);
     }
 }

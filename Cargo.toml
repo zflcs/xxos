@@ -3,7 +3,6 @@ members = [
     "xtask",
     "kernel",
     "printlib",
-    "up",
     "task-manage",
     "kernel-context",
     "kernel-vm",
