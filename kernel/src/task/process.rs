@@ -13,16 +13,17 @@ use xmas_elf::{
     header::{self, HeaderPt2, Machine},
     program, ElfFile,
 };
+use super::{thread::Thread};
 
 #[derive(Eq, PartialEq, Debug, Clone, Copy, Hash, Ord, PartialOrd)]
-pub struct TaskId(usize);
+pub struct ProcId(usize);
 
-impl TaskId {
-    pub(crate) fn generate() -> TaskId {
+impl ProcId {
+    pub(crate) fn generate() -> ProcId {
         // 任务编号计数器，任务编号自增
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
         let id = COUNTER.fetch_add(1, Ordering::Relaxed);
-        TaskId(id)
+        ProcId(id)
     }
 
     pub fn from(v: usize) -> Self {
@@ -37,15 +38,18 @@ impl TaskId {
 /// 进程。
 pub struct Process {
     /// 不可变
-    pub pid: TaskId,
+    pub pid: ProcId,
     /// 可变
-    pub parent: TaskId,
-    pub children: Vec<TaskId>,
+    pub parent: ProcId,
+    pub children: Vec<ProcId>,
     pub context: ForeignContext,
     pub address_space: AddressSpace<Sv39, Sv39Manager>,
 
     // 文件描述符表
     pub fd_table: Vec<Option<Mutex<FileHandle>>>,
+
+    // 线程
+    pub threads: Vec<Thread>,
 }
 
 impl Process {
@@ -59,7 +63,7 @@ impl Process {
 
     pub fn fork(&mut self) -> Option<Process> {
         // 子进程 pid
-        let pid = TaskId::generate();
+        let pid = ProcId::generate();
         // 复制父进程地址空间
         let parent_addr_space = &self.address_space;
         let mut address_space: AddressSpace<Sv39, Sv39Manager> = AddressSpace::new();
@@ -85,6 +89,7 @@ impl Process {
             context: foreign_ctx,
             address_space,
             fd_table: new_fd_table,
+            threads: Vec::new(),
         })
     }
 
@@ -147,8 +152,8 @@ impl Process {
         let satp = (8 << 60) | address_space.root_ppn().val();
         *context.sp_mut() = 1 << 38;
         Some(Self {
-            pid: TaskId::generate(),
-            parent: TaskId(usize::MAX),
+            pid: ProcId::generate(),
+            parent: ProcId(usize::MAX),
             children: Vec::new(),
             context: ForeignContext { context, satp },
             address_space,
@@ -158,6 +163,8 @@ impl Process {
                 // Stdout
                 Some(Mutex::new(FileHandle::empty(false, true))),
             ],
+            threads: Vec::new(),
+
         })
     }
 

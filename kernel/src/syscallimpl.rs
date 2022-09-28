@@ -1,6 +1,6 @@
 use crate::{
     fsimpl::{read_all, FS},
-    task::process::TaskId,
+    task::process::ProcId,
     PROCESSOR,
 };
 use alloc::{vec::Vec, string::String};
@@ -224,7 +224,7 @@ impl Process for SyscallContext {
                 return -1;
             }
         } else {
-            if unsafe { PROCESSOR.get_task(TaskId::from(pid as usize)).is_none() } {
+            if unsafe { PROCESSOR.get_task(ProcId::from(pid as usize)).is_none() } {
                 return pid;
             } else {
                 return -1;
