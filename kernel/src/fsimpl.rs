@@ -2,7 +2,7 @@ use alloc::{string::String, sync::Arc, vec::Vec};
 use easy_fs::{EasyFileSystem, FSManager, FileHandle, Inode, OpenFlags};
 use spin::Lazy;
 
-use crate::virtio_block::BLOCK_DEVICE;
+use crate::drivers::virtio_block::BLOCK_DEVICE;
 
 pub struct FileSystem {
     root: Arc<Inode>,

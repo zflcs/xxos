@@ -1,4 +1,4 @@
-use crate::{mm::PAGE, KERNEL_SPACE};
+use crate::{heap_alloc::PAGE, KERNEL_SPACE};
 use alloc::sync::Arc;
 use core::{alloc::Layout, ptr::NonNull};
 use easy_fs::BlockDevice;
