@@ -14,12 +14,13 @@ pub use syscall::*;
 
 #[no_mangle]
 #[link_section = ".text.entry"]
-pub extern "C" fn _start() -> ! {
+pub extern "C" fn _start() -> usize {
     printlib::init_console(&Console);
     printlib::set_log_level(option_env!("LOG"));
     heap::init();
-    exit(main());
-    unreachable!()
+    main as usize
+    // exit(main());
+    // unreachable!()
 }
 
 #[linkage = "weak"]

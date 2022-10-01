@@ -108,6 +108,18 @@ impl<Meta: VmMeta, M: PageManager<Meta>> AddressSpace<Meta, M> {
             })
     }
 
+        /// 获取虚拟地址所在的物理页号
+        pub fn translate_to_p<T>(&self, addr: VAddr<Meta>, flags: VmFlags<Meta>) -> Option<PPN<Meta>> {
+            let mut visitor = Visitor::new(self);
+            self.root().walk(Pos::new(addr.floor(), 0), &mut visitor);
+            visitor
+                .ans()
+                .filter(|pte| pte.flags().contains(flags))
+                .map(|pte| 
+                    pte.ppn()
+                )
+        }
+
     /// 遍历地址空间，将其中的地址映射添加进自己的地址空间中，重新分配物理页并拷贝所有数据及代码
     pub fn cloneself(&self, new_addrspace: &mut AddressSpace<Meta, M>) {
         let root = self.root();

@@ -23,6 +23,7 @@ use crate::{
     impls::{Sv39Manager},
     task::process::Process, consoleimpl::init_console,
 };
+use alloc::vec::Vec;
 use printlib::log;
 use easy_fs::{FSManager, OpenFlags};
 use kernel_vm::{
@@ -60,6 +61,9 @@ unsafe extern "C" fn _start() -> ! {
 }
 
 static mut KERNEL_SPACE: Once<AddressSpace<Sv39, Sv39Manager>> = Once::new();
+static mut SHARE_MODULE: Once<Vec<u8>> = Once::new();
+static mut SHARE_MODULE_SPACE: Once<Vec<[usize; 2]>> = Once::new();
+static mut PROC_INIT: usize = 0usize;
 
 extern "C" fn rust_main() -> ! {
     let layout = linker::KernelLayout::locate();
@@ -75,6 +79,7 @@ extern "C" fn rust_main() -> ! {
     heap_alloc::test();
     // 建立内核地址空间
     unsafe { KERNEL_SPACE.call_once(|| kernel_space(layout)) };
+
     // 异界传送门
     // 可以直接放在栈上
     init_processor();
@@ -91,6 +96,14 @@ extern "C" fn rust_main() -> ! {
         println!("{}", app);
     }
     println!("**************/");
+    // 加载模块
+    unsafe { 
+        SHARE_MODULE.call_once(|| read_all(FS.open("unfi-sche", OpenFlags::RDONLY).unwrap()));
+        let elf = ElfFile::new( SHARE_MODULE.get_mut().unwrap().as_slice()).unwrap();
+        SHARE_MODULE_SPACE.call_once(|| task::elf2space(elf).unwrap());
+        let module_init: fn() -> usize = core::mem::transmute(0x86000000usize);
+        PROC_INIT = module_init();
+    }
     {
         let initproc = read_all(FS.open("initproc", OpenFlags::RDONLY).unwrap());
         if let Some(mut process) = Process::from_elf(ElfFile::new(initproc.as_slice()).unwrap()) {
@@ -102,6 +115,10 @@ extern "C" fn rust_main() -> ! {
     const PROTAL_TRANSIT: usize = VPN::<Sv39>::MAX.base().val();
     loop {
         if let Some(task) = unsafe { PROCESSOR.find_next() } {
+            unsafe{ 
+                let proc_init: fn(usize, usize) -> usize = core::mem::transmute(PROC_INIT);
+                proc_init(task.entry, task.heapptr);
+            }
             task.execute(unsafe { &mut PROCESSOR.portal }, PROTAL_TRANSIT);
             match scause::read().cause() {
                 scause::Trap::Exception(scause::Exception::UserEnvCall) => {
@@ -126,7 +143,8 @@ extern "C" fn rust_main() -> ! {
                     }
                 }
                 e => {
-                    log::error!("unsupported trap: {e:?}");
+                    log::error!("unsupported trap: {e:?} stval = {:#x}", stval::read());
+                    log::error!("sepc = {:#x}", sepc::read());
                     unsafe { PROCESSOR.make_current_exited() };
                 }
             }

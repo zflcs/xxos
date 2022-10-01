@@ -1,4 +1,5 @@
-﻿use crate::{heap_alloc::PAGE, Sv39Manager};
+﻿use crate::{SHARE_MODULE_SPACE, KERNEL_SPACE, PROC_INIT};
+use crate::{heap_alloc::PAGE, Sv39Manager};
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::{alloc::Layout, str::FromStr};
@@ -8,12 +9,45 @@ use kernel_vm::{
     page_table::{MmuMeta, Sv39, VAddr, VmFlags, PPN, VPN},
     AddressSpace,
 };
-use spin::Mutex;
+use spin::{Mutex};
 use xmas_elf::{
     header::{self, HeaderPt2, Machine},
     program, ElfFile,
 };
-use super::{thread::Thread};
+
+
+
+// use super::id::RecycleAllocator;
+// use super::{thread::Thread};
+// 加载共享模块，并返回段的 ppn 范围
+pub fn elf2space(elf: ElfFile) -> Option<Vec<[usize; 2]>> {
+    const PAGE_SIZE: usize = 1 << Sv39::PAGE_BITS;
+    const PAGE_MASK: usize = PAGE_SIZE - 1;
+    // 内核地址空间，直接将共享模块代码加载进内核空间
+    let address_space= unsafe { KERNEL_SPACE.get_mut().unwrap() };
+    let mut areas = Vec::<[usize; 2]>::new();
+    for program in elf.program_iter() {
+        if !matches!(program.get_type(), Ok(program::Type::Load)) {
+            continue;
+        }
+        let off_file = program.offset() as usize;
+        let len_file = program.file_size() as usize;
+        let off_mem = program.virtual_addr() as usize;
+        let end_mem = off_mem + program.mem_size() as usize;
+        assert_eq!(off_file & PAGE_MASK, off_mem & PAGE_MASK);
+        let start = VAddr::<Sv39>::new(off_mem).floor();
+        let end = VAddr::<Sv39>::new(end_mem).ceil();
+        areas.push([start.base().val(), end.base().val()]);
+        printlib::log::warn!("{:#x}-{:#x}", off_mem, end_mem);
+        address_space.map(
+            VAddr::new(off_mem).floor()..VAddr::new(end_mem).ceil(),
+            &elf.input[off_file..][..len_file],
+            off_mem & PAGE_MASK,
+            VmFlags::build_from_str("XWRV"),
+        );
+    }
+    Some(areas)
+}
 
 #[derive(Eq, PartialEq, Debug, Clone, Copy, Hash, Ord, PartialOrd)]
 pub struct ProcId(usize);
@@ -48,8 +82,14 @@ pub struct Process {
     // 文件描述符表
     pub fd_table: Vec<Option<Mutex<FileHandle>>>,
 
+    // 堆指针
+    pub heapptr: usize,
+    // 真正的进程入口
+    pub entry: usize,
+
     // 线程
-    pub threads: Vec<Thread>,
+    // tid_alloc: RecycleAllocator,
+    // pub threads: Vec<Thread>,
 }
 
 impl Process {
@@ -59,6 +99,8 @@ impl Process {
         self.address_space = proc.address_space;
         self.address_space.map_portal(tramp);
         self.context = proc.context;
+        self.entry = proc.entry;
+        self.heapptr = proc.heapptr;
     }
 
     pub fn fork(&mut self) -> Option<Process> {
@@ -89,10 +131,13 @@ impl Process {
             context: foreign_ctx,
             address_space,
             fd_table: new_fd_table,
-            threads: Vec::new(),
+            // threads: Vec::new(),
+            heapptr: self.heapptr,
+            entry: self.entry,
         })
     }
 
+    // 默认将共享的主线程代码链接进来，创建时需要从符号表查找堆的位置
     pub fn from_elf(elf: ElfFile) -> Option<Self> {
         let entry = match elf.header.pt2 {
             HeaderPt2::Header64(pt2)
@@ -128,13 +173,14 @@ impl Process {
             }
             if program.flags().is_read() {
                 flags[3] = b'R';
-            }
+            }            
             address_space.map(
                 VAddr::new(off_mem).floor()..VAddr::new(end_mem).ceil(),
                 &elf.input[off_file..][..len_file],
                 off_mem & PAGE_MASK,
                 VmFlags::from_str(unsafe { core::str::from_utf8_unchecked(&flags) }).unwrap(),
             );
+            println!("{:#x} - {:#x}", off_mem, end_mem);
         }
         unsafe {
             let (pages, size) = PAGE
@@ -148,7 +194,38 @@ impl Process {
                 VmFlags::build_from_str("U_WRV"),
             );
         }
-        let mut context = LocalContext::user(entry);
+        // 链接共享库代码，在这里 translate 得到的并不是真正的物理地址
+        let areas = unsafe { SHARE_MODULE_SPACE.get_mut().unwrap() };
+        const FLAGS: VmFlags<Sv39> = VmFlags::build_from_str("____V");
+        for (_, range) in areas.iter().enumerate() {
+            let start_addr = range[0];
+            let count = range[1] - range[0];
+            // printlib::log::debug!("{:#x}-{:#x}", range[0], range[1]);
+            if let Some(ppn) = unsafe{ 
+                KERNEL_SPACE.get_mut().unwrap()
+                .translate_to_p::<u8>(VAddr::new(start_addr), FLAGS) } {
+                let start = VAddr::<Sv39>::new(start_addr);
+                let end = VAddr::<Sv39>::new(start_addr + count);
+                // printlib::log::debug!("{:#x}-{:#x}  {:#x}", start.val(), end.val(), ppn.val() as usize);
+                address_space.map_extern(
+                    start.floor()..end.ceil(),
+                    ppn,
+                    VmFlags::build_from_str("UXWRV"),
+                );
+            }
+        }
+        // printlib::log::info!("entry {:#x}", _entry);
+        // printlib::log::info!("memory {:#x}", elf.find_section_by_name(".bss").unwrap().address() as usize);
+        let heapptr = elf.find_section_by_name(".data").unwrap().address() as usize;
+        printlib::log::info!("heapptr {:#x}", heapptr);
+        let primary_enter: usize;
+        unsafe{ 
+            let proc_init: fn(usize, usize) -> usize = core::mem::transmute(PROC_INIT);
+            primary_enter = proc_init(entry, heapptr);
+            printlib::log::info!("primary_enter {:#x}", primary_enter);
+        }
+        // printlib::log::debug!("here");
+        let mut context = LocalContext::user(primary_enter);
         let satp = (8 << 60) | address_space.root_ppn().val();
         *context.sp_mut() = 1 << 38;
         Some(Self {
@@ -163,7 +240,9 @@ impl Process {
                 // Stdout
                 Some(Mutex::new(FileHandle::empty(false, true))),
             ],
-            threads: Vec::new(),
+            heapptr,
+            entry,
+            // threads: Vec::new(),
 
         })
     }

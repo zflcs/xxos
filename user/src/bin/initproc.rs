@@ -8,6 +8,8 @@ use user_lib::{exec, fork, println, sched_yield, wait};
 #[no_mangle]
 fn main() -> i32 {
     if fork() == 0 {
+        println!("exec user_shell");
+
         // exec("user_shell\0", &[core::ptr::null::<u8>()]);
         exec("user_shell");
     } else {

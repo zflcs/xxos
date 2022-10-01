@@ -61,6 +61,7 @@ pub fn build_for(release: bool) {
     if bins.is_empty() {
         return;
     }
+    cases.cases.as_mut().unwrap().push(String::from("unfi-sche"));
     easy_fs_pack(
         &cases.cases.unwrap(),
         TARGET

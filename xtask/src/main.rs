@@ -1,11 +1,13 @@
 mod fs_pack;
 mod user;
+mod module;
 
 #[macro_use]
 extern crate clap;
 
 use clap::Parser;
 use command_ext::{BinUtil, Cargo, CommandExt, Qemu};
+use module::build_module;
 use once_cell::sync::Lazy;
 use std::{
     path::{Path, PathBuf},
@@ -60,7 +62,9 @@ struct BuildArgs {
 
 impl BuildArgs {
     fn make(&self) -> PathBuf {
+        build_module(false);
         user::build_for(false);
+        
         let package = self.module.as_ref().unwrap();
         // 生成
         let mut build = Cargo::build();

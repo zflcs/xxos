@@ -30,6 +30,8 @@ SECTIONS {
         *(.srodata .srodata.*)
     }
     .data : {
+        *(.data.heap)
+        *(.data.memory)
         *(.data .data.*)
         *(.sdata .sdata.*)
     }

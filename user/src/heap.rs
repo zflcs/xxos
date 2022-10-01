@@ -5,11 +5,26 @@ use core::{
 };
 use customizable_buddy::{BuddyAllocator, LinkedListBuddy, UsizeBuddy};
 
+pub type MutAllocator<const N: usize> = BuddyAllocator<N, UsizeBuddy, LinkedListBuddy>;
+#[no_mangle]
+#[link_section = ".data.heap"]
+pub static mut HEAP: MutAllocator<32> = MutAllocator::new();
+
+// 托管空间 16 KiB
+const MEMORY_SIZE: usize = 16 << 10;
+#[no_mangle]
+#[link_section = ".data.memory"]
+static mut MEMORY: [u8; MEMORY_SIZE] = [0u8; MEMORY_SIZE];
+
+
+
+
 /// 初始化全局分配器和内核堆分配器。
 pub fn init() {
-    // 托管空间 16 KiB
-    const MEMORY_SIZE: usize = 16 << 10;
-    static mut MEMORY: [u8; MEMORY_SIZE] = [0u8; MEMORY_SIZE];
+    // printlib::log::debug!("heap {:#x}", unsafe{ &mut HEAP as *mut MutAllocator<32> as usize });
+    // printlib::log::debug!("heap {:#x}", core::mem::size_of::<MutAllocator<32>>());
+    // printlib::log::debug!("memory {:#x}", unsafe{ &mut MEMORY as *mut u8 as usize });
+    
     unsafe {
         HEAP.init(
             core::mem::size_of::<usize>().trailing_zeros() as _,
@@ -19,8 +34,6 @@ pub fn init() {
     }
 }
 
-type MutAllocator<const N: usize> = BuddyAllocator<N, UsizeBuddy, LinkedListBuddy>;
-static mut HEAP: MutAllocator<32> = MutAllocator::new();
 
 struct Global;
 
