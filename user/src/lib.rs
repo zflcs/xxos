@@ -8,7 +8,9 @@ mod heap;
 extern crate alloc;
 
 use core::alloc::Layout;
-
+use core::future::Future;
+use alloc::boxed::Box;
+use core::pin::Pin;
 pub use printlib::{print, println};
 pub use syscall::*;
 use runtime::Executor;
@@ -17,18 +19,31 @@ use runtime::Executor;
 #[link_section = ".data.executor"]
 static mut EXECUTOR: Executor = Executor::new();
 
+static mut ADD_COROUTINE_PTR: usize = 0usize;
+
 #[no_mangle]
 #[link_section = ".text.entry"]
-pub extern "C" fn _start() -> usize {
+pub extern "C" fn _start(add_coroutine_ptr: usize) -> usize {
     printlib::init_console(&Console);
     printlib::set_log_level(option_env!("LOG"));
     heap::init();
     unsafe{
         printlib::log::warn!("EXECUTOR ptr {:#x}", &mut EXECUTOR as *mut Executor as usize);
+        ADD_COROUTINE_PTR = add_coroutine_ptr;
     }
     main as usize
     // exit(main());
     // unreachable!()
+}
+
+#[no_mangle]
+#[inline(never)]
+pub fn add_coroutine(future: Pin<Box<dyn Future<Output=()> + 'static + Send + Sync>>, prio: usize){
+    unsafe {
+        let add_coroutine_true: fn(Pin<Box<dyn Future<Output=()> + 'static + Send + Sync>>, usize) = 
+            core::mem::transmute(ADD_COROUTINE_PTR);
+        add_coroutine_true(future, prio);
+    }
 }
 
 #[linkage = "weak"]

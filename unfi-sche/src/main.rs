@@ -58,8 +58,8 @@ fn primary_thread() {
     log::warn!("main thread init ");
     unsafe {
         log::debug!("SECONDARY_ENTER {:#x}", SECONDARY_INIT);
-        let secondary_init: fn() -> usize = core::mem::transmute(SECONDARY_INIT);
-        let second_thread_entry =  secondary_init();
+        let secondary_init: fn(usize) -> usize = core::mem::transmute(SECONDARY_INIT);
+        let second_thread_entry =  secondary_init(add_coroutine as usize);
         add_coroutine(Box::pin(test(second_thread_entry)), 0);
     }
     run();

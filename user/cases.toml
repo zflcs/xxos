@@ -9,4 +9,5 @@ cases = [
     "initproc",
     "filetest_simple",
     "cat_filea",
+    "test"
 ]
