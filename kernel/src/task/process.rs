@@ -86,6 +86,8 @@ pub struct Process {
     pub heapptr: usize,
     // 真正的进程入口
     pub entry: usize,
+    // EXECUTOR 指针
+    pub exeptr: usize,
 
     // 线程
     // tid_alloc: RecycleAllocator,
@@ -101,6 +103,7 @@ impl Process {
         self.context = proc.context;
         self.entry = proc.entry;
         self.heapptr = proc.heapptr;
+        self.exeptr = proc.exeptr;
     }
 
     pub fn fork(&mut self) -> Option<Process> {
@@ -133,6 +136,7 @@ impl Process {
             fd_table: new_fd_table,
             // threads: Vec::new(),
             heapptr: self.heapptr,
+            exeptr: self.exeptr,
             entry: self.entry,
         })
     }
@@ -218,10 +222,21 @@ impl Process {
         // printlib::log::info!("memory {:#x}", elf.find_section_by_name(".bss").unwrap().address() as usize);
         let heapptr = elf.find_section_by_name(".data").unwrap().address() as usize;
         printlib::log::info!("heapptr {:#x}", heapptr);
+        let mut exeptr = 0;
+
+        for sym  in symbol_table(&elf){
+            let name = sym.get_name(&elf);
+            if name.unwrap() == "EXECUTOR"{
+                //println!("name {:?}  value:{:#x?}", name, sym.value());
+                exeptr = sym.value() as usize;
+            }
+        }
+        printlib::log::info!("exeptr {:#x}", exeptr);
+
         let primary_enter: usize;
         unsafe{ 
-            let proc_init: fn(usize, usize) -> usize = core::mem::transmute(PROC_INIT);
-            primary_enter = proc_init(entry, heapptr);
+            let proc_init: fn(usize, usize, usize) -> usize = core::mem::transmute(PROC_INIT);
+            primary_enter = proc_init(entry, heapptr, exeptr);
             printlib::log::info!("primary_enter {:#x}", primary_enter);
         }
         // printlib::log::debug!("here");
@@ -241,6 +256,7 @@ impl Process {
                 Some(Mutex::new(FileHandle::empty(false, true))),
             ],
             heapptr,
+            exeptr,
             entry,
             // threads: Vec::new(),
 
@@ -251,3 +267,16 @@ impl Process {
         unsafe { self.context.execute(portal, portal_transit) };
     }
 }
+
+
+use xmas_elf::sections::SectionData::SymbolTable64;
+use xmas_elf::symbol_table::{Entry, Entry64};
+
+fn symbol_table<'a>(elf: &ElfFile<'a>) -> &'a [Entry64] {
+    match elf.find_section_by_name(".symtab").unwrap().get_data(&elf).unwrap()
+    {
+        SymbolTable64(dsym) => dsym,
+        _ => panic!("corrupted .symtab"),
+    }
+}
+

@@ -4,6 +4,7 @@
 
 mod heap;
 mod thread;
+mod executor;
 
 extern crate printlib;
 extern crate alloc;
@@ -12,6 +13,7 @@ use alloc::vec::Vec;
 use printlib::*;
 use heap::MutAllocator;
 use sbi_rt::*;
+use runtime::Executor;
 
 static mut SECONDARY_INIT: usize = 0usize;
 
@@ -37,10 +39,12 @@ unsafe extern "C" fn _start() -> usize {
 }
 
 /// 每个进程的初始化函数，主要是设置用户堆，在内核调度用户进程之前执行
-fn init_proc(secondary_init: usize, heapptr: usize) -> usize{
+fn init_proc(secondary_init: usize, heapptr: usize, exeptr: usize) -> usize{
     let heap = heapptr as *mut usize as *mut MutAllocator<32>;
+    let exe = exeptr as *mut usize as *mut Executor;
     unsafe {
         heap::init(&mut *heap);
+        executor::init(&mut *exe);
         SECONDARY_INIT = secondary_init;
     }
     primary_thread as usize

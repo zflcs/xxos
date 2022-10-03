@@ -116,8 +116,8 @@ extern "C" fn rust_main() -> ! {
     loop {
         if let Some(task) = unsafe { PROCESSOR.find_next() } {
             unsafe{ 
-                let proc_init: fn(usize, usize) -> usize = core::mem::transmute(PROC_INIT);
-                proc_init(task.entry, task.heapptr);
+                let proc_init: fn(usize, usize, usize) -> usize = core::mem::transmute(PROC_INIT);
+                proc_init(task.entry, task.heapptr, task.exeptr);
             }
             task.execute(unsafe { &mut PROCESSOR.portal }, PROTAL_TRANSIT);
             match scause::read().cause() {

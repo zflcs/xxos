@@ -31,7 +31,7 @@ SECTIONS {
     }
     .data : {
         *(.data.heap)
-        *(.data.memory)
+        *(.data.executor)
         *(.data .data.*)
         *(.sdata .sdata.*)
     }

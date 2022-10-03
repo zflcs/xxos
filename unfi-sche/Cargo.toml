@@ -12,3 +12,4 @@ sbi-rt = { git = "https://github.com/rustsbi/sbi-rt", branch = "dev" }
 riscv = "0.8.0"
 syscall = { path = "../syscall", features = ["user"] }
 kernel-context ={ path = "../kernel-context"}
+runtime ={ path = "../runtime"}

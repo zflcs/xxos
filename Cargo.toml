@@ -10,7 +10,8 @@ members = [
     "syscall",
     "utils",
     "linker",
-    "unfi-sche"
+    "unfi-sche",
+    "runtime"
 ]
 default-members = ["xtask"]
 

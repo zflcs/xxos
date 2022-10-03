@@ -11,6 +11,11 @@ use core::alloc::Layout;
 
 pub use printlib::{print, println};
 pub use syscall::*;
+use runtime::Executor;
+
+#[no_mangle]
+#[link_section = ".data.executor"]
+static mut EXECUTOR: Executor = Executor::new();
 
 #[no_mangle]
 #[link_section = ".text.entry"]
@@ -18,6 +23,9 @@ pub extern "C" fn _start() -> usize {
     printlib::init_console(&Console);
     printlib::set_log_level(option_env!("LOG"));
     heap::init();
+    unsafe{
+        printlib::log::warn!("EXECUTOR ptr {:#x}", &mut EXECUTOR as *mut Executor as usize);
+    }
     main as usize
     // exit(main());
     // unreachable!()
