@@ -13,3 +13,4 @@ riscv = "0.8.0"
 syscall = { path = "../syscall", features = ["user"] }
 kernel-context ={ path = "../kernel-context"}
 runtime ={ path = "../runtime"}
+spin = "0.9.4"

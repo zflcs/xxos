@@ -5,15 +5,18 @@
 mod heap;
 mod thread;
 mod executor;
+mod interface;
 
 extern crate printlib;
 extern crate alloc;
 
-use alloc::vec::Vec;
 use printlib::*;
 use heap::MutAllocator;
 use sbi_rt::*;
 use runtime::Executor;
+use interface::{add_coroutine, run};
+use alloc::boxed::Box;
+
 
 static mut SECONDARY_INIT: usize = 0usize;
 
@@ -57,14 +60,17 @@ fn primary_thread() {
         log::debug!("SECONDARY_ENTER {:#x}", SECONDARY_INIT);
         let secondary_init: fn() -> usize = core::mem::transmute(SECONDARY_INIT);
         let second_thread_entry =  secondary_init();
-        let secondary_thread: fn() -> usize = core::mem::transmute(second_thread_entry);
+        add_coroutine(Box::pin(test(second_thread_entry)), 0);
+    }
+    run();
+    syscall::exit(0);
+}
+
+async fn test(entry: usize) {
+    unsafe {
+        let secondary_thread: fn() -> usize = core::mem::transmute(entry);
         secondary_thread();
     }
-    let mut v = Vec::<usize>::new();
-    v.push(333);
-    log::debug!("vec ptr {:#x}", v.as_ptr() as usize);
-
-    syscall::exit(0);
 }
 
 
