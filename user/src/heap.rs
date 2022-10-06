@@ -4,11 +4,17 @@ use core::{
     ptr::NonNull,
 };
 use customizable_buddy::{BuddyAllocator, LinkedListBuddy, UsizeBuddy};
+use runtime::Executor;
+
 
 pub type MutAllocator<const N: usize> = BuddyAllocator<N, UsizeBuddy, LinkedListBuddy>;
 #[no_mangle]
 #[link_section = ".data.heap"]
 pub static mut HEAP: MutAllocator<32> = MutAllocator::new();
+
+#[no_mangle]
+#[link_section = ".data.executor"]
+pub static mut EXECUTOR: Executor = Executor::new();
 
 // 托管空间 16 KiB
 const MEMORY_SIZE: usize = 16 << 10;

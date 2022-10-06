@@ -13,11 +13,7 @@ use alloc::boxed::Box;
 use core::pin::Pin;
 pub use printlib::{print, println};
 pub use syscall::*;
-use runtime::Executor;
 
-#[no_mangle]
-#[link_section = ".data.executor"]
-static mut EXECUTOR: Executor = Executor::new();
 
 static mut ADD_COROUTINE_PTR: usize = 0usize;
 
@@ -28,7 +24,8 @@ pub extern "C" fn _start(add_coroutine_ptr: usize) -> usize {
     printlib::set_log_level(option_env!("LOG"));
     heap::init();
     unsafe{
-        printlib::log::warn!("EXECUTOR ptr {:#x}", &mut EXECUTOR as *mut Executor as usize);
+        printlib::log::warn!("HEAP size {:#x}", core::mem::size_of::<heap::MutAllocator<32>>());
+        printlib::log::warn!("EXECUTOR ptr {:#x}", &mut heap::EXECUTOR as *mut runtime::Executor as usize);
         ADD_COROUTINE_PTR = add_coroutine_ptr;
     }
     main as usize

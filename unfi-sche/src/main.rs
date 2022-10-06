@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 #![feature(default_alloc_error_handler)]
-
+#![feature(naked_functions, asm_sym)]
 mod heap;
 mod thread;
 mod executor;
@@ -42,9 +42,9 @@ unsafe extern "C" fn _start() -> usize {
 }
 
 /// 每个进程的初始化函数，主要是设置用户堆，在内核调度用户进程之前执行
-fn init_proc(secondary_init: usize, heapptr: usize, exeptr: usize) -> usize{
+fn init_proc(secondary_init: usize, heapptr: usize) -> usize{
     let heap = heapptr as *mut usize as *mut MutAllocator<32>;
-    let exe = exeptr as *mut usize as *mut Executor;
+    let exe = (heapptr + core::mem::size_of::<MutAllocator<32>>()) as *mut usize as *mut Executor;
     unsafe {
         heap::init(&mut *heap);
         executor::init(&mut *exe);
@@ -63,7 +63,6 @@ fn primary_thread() {
         add_coroutine(Box::pin(test(second_thread_entry)), 0);
     }
     run();
-    syscall::exit(0);
 }
 
 async fn test(entry: usize) {
