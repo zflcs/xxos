@@ -5,12 +5,12 @@
 #![deny(warnings)]
 
 mod fsimpl;
-mod heap_alloc;
 mod processorimpl;
 mod drivers;
 mod consoleimpl;
 mod syscallimpl;
 mod task;
+mod mmimpl;
 
 #[macro_use]
 extern crate printlib;
@@ -20,21 +20,16 @@ extern crate alloc;
 
 use crate::{
     fsimpl::{read_all, FS},
-    impls::{Sv39Manager},
     task::process::Process, consoleimpl::init_console,
 };
+use kernel_vm::page_table::{VmFlags, Sv39, PPN, MmuMeta, VPN};
 use printlib::log;
 use easy_fs::{FSManager, OpenFlags};
-use kernel_vm::{
-    page_table::{MmuMeta, Sv39, VAddr, VmFlags, PPN, VPN},
-    AddressSpace,
-};
+
 use processorimpl::{init_processor, PROCESSOR};
 use riscv::register::*;
 use sbi_rt::*;
-use spin::Once;
 use xmas_elf::ElfFile;
-use syscall::Caller;
 
 /// Supervisor 汇编入口。
 ///
@@ -58,7 +53,6 @@ unsafe extern "C" fn _start() -> ! {
     )
 }
 
-static mut KERNEL_SPACE: Once<AddressSpace<Sv39, Sv39Manager>> = Once::new();
 
 extern "C" fn rust_main() -> ! {
     let layout = linker::KernelLayout::locate();
@@ -66,23 +60,24 @@ extern "C" fn rust_main() -> ! {
     unsafe { layout.zero_bss() };
     // 初始化 `console`
     init_console();
-
     // 初始化 syscall
     syscallimpl::init_syscall();
     // 初始化内核堆
-    heap_alloc::init();
-    heap_alloc::test();
-    // 建立内核地址空间
-    unsafe { KERNEL_SPACE.call_once(|| kernel_space(layout)) };
-    // 异界传送门
-    // 可以直接放在栈上
+    mmimpl::heap_init();
+    mmimpl::heap_test();
+
+    // 初始化处理器，同时设置好异界传送门
     init_processor();
-    let tramp = (
-        PPN::<Sv39>::new(unsafe { &PROCESSOR.portal } as *const _ as usize >> Sv39::PAGE_BITS),
+    
+    // 建立内核地址空间
+    mmimpl::init_kern_space();
+    
+    // 传送门映射到内核地址空间
+    unsafe { mmimpl::KERNEL_SPACE.get_mut().unwrap().map_portal(
+        VPN::MAX, 
+        PPN::<Sv39>::new( &PROCESSOR.portal as *const _ as usize >> Sv39::PAGE_BITS),
         VmFlags::build_from_str("XWRV"),
-    );
-    // 传送门映射到所有地址空间
-    unsafe { KERNEL_SPACE.get_mut().unwrap().map_portal(tramp) };
+    )};
     // 加载应用程序
     // TODO!
     println!("/**** APPS ****");
@@ -93,7 +88,11 @@ extern "C" fn rust_main() -> ! {
     {
         let initproc = read_all(FS.open("initproc", OpenFlags::RDONLY).unwrap());
         if let Some(mut process) = Process::from_elf(ElfFile::new(initproc.as_slice()).unwrap()) {
-            process.address_space.map_portal(tramp);
+            process.address_space.map_portal(
+                VPN::MAX, 
+                PPN::<Sv39>::new(unsafe { &PROCESSOR.portal } as *const _ as usize >> Sv39::PAGE_BITS),
+                VmFlags::build_from_str("XWRV"),
+            );
             unsafe { PROCESSOR.add(process.pid, process) };
         }
     }
@@ -109,7 +108,7 @@ extern "C" fn rust_main() -> ! {
                     ctx.move_next();
                     let id: Id = ctx.a(7).into();
                     let args = [ctx.a(0), ctx.a(1), ctx.a(2), ctx.a(3), ctx.a(4), ctx.a(5)];
-                    match syscall::handle(Caller { entity: 0, flow: 0 }, id, args) {
+                    match syscall::handle(id, args) {
                         Ret::Done(ret) => match id {
                             Id::EXIT => unsafe { PROCESSOR.make_current_exited() },
                             _ => {
@@ -147,145 +146,3 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     unreachable!()
 }
 
-pub const MMIO: &[(usize, usize)] = &[
-    (0x1000_1000, 0x00_1000), // Virtio Block in virt machine
-];
-
-fn kernel_space(layout: linker::KernelLayout) -> AddressSpace<Sv39, Sv39Manager> {
-    // 打印段位置
-    let text = VAddr::<Sv39>::new(layout.text);
-    let rodata = VAddr::<Sv39>::new(layout.rodata);
-    let data = VAddr::<Sv39>::new(layout.data);
-    let end = VAddr::<Sv39>::new(layout.end);
-    log::info!("__text ----> {:#10x}", text.val());
-    log::info!("__rodata --> {:#10x}", rodata.val());
-    log::info!("__data ----> {:#10x}", data.val());
-    log::info!("__end -----> {:#10x}", end.val());
-    println!();
-
-    // 内核地址空间
-    let mut space = AddressSpace::<Sv39, Sv39Manager>::new();
-    space.map_extern(
-        text.floor()..rodata.ceil(),
-        PPN::new(text.floor().val()),
-        VmFlags::build_from_str("X_RV"),
-    );
-    space.map_extern(
-        rodata.floor()..data.ceil(),
-        PPN::new(rodata.floor().val()),
-        VmFlags::build_from_str("__RV"),
-    );
-    space.map_extern(
-        data.floor()..end.ceil(),
-        PPN::new(data.floor().val()),
-        VmFlags::build_from_str("_WRV"),
-    );
-
-    // MMIO
-    for pair in MMIO {
-        let _mmio_begin = VAddr::<Sv39>::new(pair.0);
-        let _mmio_end = VAddr::<Sv39>::new(pair.0 + pair.1);
-        log::info!(
-            "MMIO range ---> {:#10x}, {:#10x} \n",
-            _mmio_begin.val(),
-            _mmio_end.val()
-        );
-        space.map_extern(
-            _mmio_begin.floor().._mmio_end.ceil(),
-            PPN::new(_mmio_begin.floor().val()),
-            VmFlags::build_from_str("_WRV"),
-        );
-    }
-
-    unsafe { satp::set(satp::Mode::Sv39, 0, space.root_ppn().val()) };
-    space
-}
-
-/// 各种接口库的实现。
-mod impls {
-    use crate::{
-        heap_alloc::PAGE,
-    };
-    use alloc::{alloc::handle_alloc_error};
-    use core::{alloc::Layout, num::NonZeroUsize, ptr::NonNull};
-    use kernel_vm::{
-        page_table::{MmuMeta, Pte, Sv39, VAddr, VmFlags, PPN, VPN},
-        PageManager,
-    };
-
-    #[repr(transparent)]
-    pub struct Sv39Manager(NonNull<Pte<Sv39>>);
-
-    impl Sv39Manager {
-        const OWNED: VmFlags<Sv39> = unsafe { VmFlags::from_raw(1 << 8) };
-    }
-
-    impl PageManager<Sv39> for Sv39Manager {
-        #[inline]
-        fn new_root() -> Self {
-            const SIZE: usize = 1 << Sv39::PAGE_BITS;
-            unsafe {
-                match PAGE.allocate(Sv39::PAGE_BITS, NonZeroUsize::new_unchecked(SIZE)) {
-                    Ok((ptr, _)) => Self(ptr),
-                    Err(_) => handle_alloc_error(Layout::from_size_align_unchecked(SIZE, SIZE)),
-                }
-            }
-        }
-
-        #[inline]
-        fn root_ppn(&self) -> PPN<Sv39> {
-            PPN::new(self.0.as_ptr() as usize >> Sv39::PAGE_BITS)
-        }
-
-        #[inline]
-        fn root_ptr(&self) -> NonNull<Pte<Sv39>> {
-            self.0
-        }
-
-        #[inline]
-        fn p_to_v<T>(&self, ppn: PPN<Sv39>) -> NonNull<T> {
-            unsafe { NonNull::new_unchecked(VPN::<Sv39>::new(ppn.val()).base().as_mut_ptr()) }
-        }
-
-        #[inline]
-        fn v_to_p<T>(&self, ptr: NonNull<T>) -> PPN<Sv39> {
-            PPN::new(VAddr::<Sv39>::new(ptr.as_ptr() as _).floor().val())
-        }
-
-        #[inline]
-        fn check_owned(&self, pte: Pte<Sv39>) -> bool {
-            pte.flags().contains(Self::OWNED)
-        }
-
-        fn allocate(&mut self, len: usize, flags: &mut VmFlags<Sv39>) -> NonNull<u8> {
-            unsafe {
-                match PAGE.allocate(
-                    Sv39::PAGE_BITS,
-                    NonZeroUsize::new_unchecked(len << Sv39::PAGE_BITS),
-                ) {
-                    Ok((ptr, size)) => {
-                        assert_eq!(size, len << Sv39::PAGE_BITS);
-                        *flags |= Self::OWNED;
-                        ptr
-                    }
-                    Err(_) => handle_alloc_error(Layout::from_size_align_unchecked(
-                        len << Sv39::PAGE_BITS,
-                        1 << Sv39::PAGE_BITS,
-                    )),
-                }
-            }
-        }
-
-        fn deallocate(&mut self, _pte: Pte<Sv39>, _len: usize) -> usize {
-            todo!()
-        }
-
-        fn drop_root(&mut self) {
-            todo!()
-        }
-    }
-
-
-
-    
-}

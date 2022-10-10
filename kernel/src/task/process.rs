@@ -1,4 +1,4 @@
-﻿use crate::{heap_alloc::PAGE, Sv39Manager};
+﻿use crate::mmimpl::{PAGE, Sv39Manager};
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::{alloc::Layout, str::FromStr};
@@ -51,9 +51,7 @@ pub struct Process {
 impl Process {
     pub fn exec(&mut self, elf: ElfFile) {
         let proc = Process::from_elf(elf).unwrap();
-        let tramp = self.address_space.tramp;
         self.address_space = proc.address_space;
-        self.address_space.map_portal(tramp);
         self.context = proc.context;
     }
 
