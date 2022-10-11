@@ -25,10 +25,10 @@ pub trait PageManager<Meta: VmMeta> {
         self.v_to_p(self.root_ptr())
     }
 
-    /// 计算当前地址空间上指向物理页的指针。
+    /// 计算当前地址空间上指向物理页的指针（虚拟地址）。
     fn p_to_v<T>(&self, ppn: PPN<Meta>) -> NonNull<T>;
 
-    /// 计算当前地址空间上的指针指向的物理页。
+    /// 计算当前地址空间上的指针（虚拟地址）指向的物理页。
     fn v_to_p<T>(&self, ptr: NonNull<T>) -> PPN<Meta>;
 
     /// 检查是否拥有一个页的所有权。

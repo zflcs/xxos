@@ -1,18 +1,18 @@
-﻿use crate::mmimpl::{PAGE, Sv39Manager};
+﻿use crate::mmimpl::{PAGE, Sv39Manager, from_elf, PAGE_SIZE};
 use crate::PROCESSOR;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicUsize, Ordering};
-use core::{alloc::Layout, str::FromStr};
+use core::{alloc::Layout};
 use easy_fs::FileHandle;
 use kernel_context::{foreign::ForeignContext, foreign::ForeignPortal, LocalContext};
 use kernel_vm::{
-    page_table::{MmuMeta, Sv39, VAddr, VmFlags, PPN, VPN},
+    page_table::{MmuMeta, Sv39, VmFlags, PPN, VPN},
     AddressSpace,
 };
 use spin::Mutex;
 use xmas_elf::{
     header::{self, HeaderPt2, Machine},
-    program, ElfFile,
+    ElfFile,
 };
 
 #[derive(Eq, PartialEq, Debug, Clone, Copy, Hash, Ord, PartialOrd)]
@@ -88,6 +88,7 @@ impl Process {
     }
 
     pub fn from_elf(elf: ElfFile) -> Option<Self> {
+        // elf 入口地址
         let entry = match elf.header.pt2 {
             HeaderPt2::Header64(pt2)
                 if pt2.type_.as_type() == header::Type::Executable
@@ -97,39 +98,9 @@ impl Process {
             }
             _ => None?,
         };
-
-        const PAGE_SIZE: usize = 1 << Sv39::PAGE_BITS;
-        const PAGE_MASK: usize = PAGE_SIZE - 1;
-
-        let mut address_space = AddressSpace::new();
-        for program in elf.program_iter() {
-            if !matches!(program.get_type(), Ok(program::Type::Load)) {
-                continue;
-            }
-
-            let off_file = program.offset() as usize;
-            let len_file = program.file_size() as usize;
-            let off_mem = program.virtual_addr() as usize;
-            let end_mem = off_mem + program.mem_size() as usize;
-            assert_eq!(off_file & PAGE_MASK, off_mem & PAGE_MASK);
-
-            let mut flags: [u8; 5] = *b"U___V";
-            if program.flags().is_execute() {
-                flags[1] = b'X';
-            }
-            if program.flags().is_write() {
-                flags[2] = b'W';
-            }
-            if program.flags().is_read() {
-                flags[3] = b'R';
-            }
-            address_space.map(
-                VAddr::new(off_mem).floor()..VAddr::new(end_mem).ceil(),
-                &elf.input[off_file..][..len_file],
-                off_mem & PAGE_MASK,
-                VmFlags::from_str(unsafe { core::str::from_utf8_unchecked(&flags) }).unwrap(),
-            );
-        }
+        // 根据 elf 生成地址空间
+        let mut address_space = from_elf(elf);
+        // 分配两个页当作用户态栈
         unsafe {
             let (pages, size) = PAGE
                 .allocate_layout::<u8>(Layout::from_size_align_unchecked(2 * PAGE_SIZE, PAGE_SIZE))
@@ -145,6 +116,7 @@ impl Process {
         let mut context = LocalContext::user(entry);
         let satp = (8 << 60) | address_space.root_ppn().val();
         *context.sp_mut() = 1 << 38;
+        // 添加异界传送门映射
         address_space.map_portal(
             VPN::MAX, 
             PPN::<Sv39>::new(unsafe { &PROCESSOR.portal } as *const _ as usize >> Sv39::PAGE_BITS),
