@@ -8,7 +8,7 @@ mod kernel_heap;
 mod page_manager;
 
 // 内核地址空间
-mod kernel_space;
+mod addr_space;
 
 pub use kernel_heap::heap_init;
 pub use kernel_heap::heap_test;
@@ -16,5 +16,10 @@ pub use kernel_heap::PAGE;
 
 pub use page_manager::Sv39Manager;
 
-pub use kernel_space::KERNEL_SPACE;
-pub use kernel_space::init_kern_space;
+pub use addr_space::{
+    KERNEL_SPACE,
+    init_kern_space,
+    from_elf,
+    PAGE_MASK,
+    PAGE_SIZE
+};

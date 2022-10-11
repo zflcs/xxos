@@ -12,7 +12,7 @@ use visitor::Visitor;
 
 
 
-/// 地址空间。
+/// 地址空间。缺页则将对应的 PPN 改为 PPN::0
 pub struct AddressSpace<Meta: VmMeta, M: PageManager<Meta>> {
     /// 段内存管理
     pub sections: Vec<AddrMap<Meta>>,
@@ -149,6 +149,7 @@ impl<Meta: VmMeta, M: PageManager<Meta>> AddressSpace<Meta, M> {
             new_addrspace.map_portal(addr_map.vpn_range.start, addr_map.ppn_range.start, addr_map.permission);
         }
     }
+
 }
 
 impl<Meta: VmMeta, P: PageManager<Meta>> fmt::Debug for AddressSpace<Meta, P> {
