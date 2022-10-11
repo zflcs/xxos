@@ -30,8 +30,7 @@ use processorimpl::{init_processor, PROCESSOR};
 use riscv::register::*;
 use sbi_rt::*;
 use xmas_elf::ElfFile;
-use spin::Once;
-use alloc::vec::Vec;
+use mmimpl::{PROC_INIT, load_module};
 
 
 /// Supervisor 汇编入口。
@@ -57,9 +56,7 @@ unsafe extern "C" fn _start() -> ! {
     )
 }
 
-static mut SHARE_MODULE: Once<Vec<u8>> = Once::new();
-static mut SHARE_MODULE_SPACE: Once<Vec<[usize; 2]>> = Once::new();
-static mut PROC_INIT: usize = 0usize;
+
 
 extern "C" fn rust_main() -> ! {
     let layout = linker::KernelLayout::locate();
@@ -93,14 +90,7 @@ extern "C" fn rust_main() -> ! {
         println!("{}", app);
     }
     println!("**************/");
-    // 加载模块
-    unsafe { 
-        SHARE_MODULE.call_once(|| read_all(FS.open("unfi-sche", OpenFlags::RDONLY).unwrap()));
-        let elf = ElfFile::new( SHARE_MODULE.get_mut().unwrap().as_slice()).unwrap();
-        SHARE_MODULE_SPACE.call_once(|| task::elf2space(elf).unwrap());
-        let module_init: fn() -> usize = core::mem::transmute(0x86000000usize);
-        PROC_INIT = module_init();
-    }
+    load_module("unfi-sche");
     {
         let initproc = read_all(FS.open("initproc", OpenFlags::RDONLY).unwrap());
         if let Some(process) = Process::from_elf(ElfFile::new(initproc.as_slice()).unwrap()) {

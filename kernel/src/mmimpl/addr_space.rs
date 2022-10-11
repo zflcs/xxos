@@ -12,7 +12,7 @@ use xmas_elf::{
     program, ElfFile,
     header::{self, HeaderPt2, Machine},
 };
-use core::{str::FromStr, slice::SlicePattern};
+use core::str::FromStr;
 use crate::fsimpl::{FS, read_all};
 use easy_fs::{OpenFlags, FSManager};
 
@@ -21,6 +21,9 @@ use easy_fs::{OpenFlags, FSManager};
 pub static mut KERNEL_SPACE: Once<AddressSpace<Sv39, Sv39Manager>> = Once::new();
 // 共享模块地址空间，根据模块名得到对应的模块地址空间
 pub static mut SHARE_MODULE_SPACE: BTreeMap<String, AddressSpace<Sv39, Sv39Manager>> = BTreeMap::new();
+
+pub static mut PROC_INIT: usize = 0usize;
+
 
 pub fn init_kern_space() {
     let layout = linker::KernelLayout::locate();
@@ -121,14 +124,22 @@ pub fn from_elf(elf: &ElfFile) -> AddressSpace<Sv39, Sv39Manager> {
 /// 读取共享模块
 pub fn load_module(name: &str) {
     // 根据模块的 elf 文件得到地址空间以及入口
-    let elf = ElfFile::new(read_all(FS.open(name, OpenFlags::RDONLY).unwrap()).as_slice()).unwrap();
+    let data = read_all(FS.open(name, OpenFlags::RDONLY).unwrap());
+    let elf = ElfFile::new(data.as_slice()).unwrap();
     let addr_space = from_elf(&elf);
     let entry = elf_entry(&elf).unwrap();
+
+    // 内核地址空间添加模块
+    addrspace_add_module(
+        unsafe{ KERNEL_SPACE.get_mut().unwrap() }, 
+        &addr_space,
+         false
+    );
     unsafe {
         SHARE_MODULE_SPACE.insert(String::from(name), addr_space);
+        let module_init: fn() -> usize = core::mem::transmute(entry);
+        PROC_INIT = module_init();
     }
-    let module_init: fn() -> usize = core::mem::transmute(entry);
-    PROC_INIT = module_init();
 }
 
 /// 读取 elf 文件的入口
@@ -145,16 +156,30 @@ pub fn elf_entry(elf: &ElfFile) -> Option<usize> {
     }   
 }
 
-pub fn addrspace_add_module(addrspace: AddressSpace<Sv39, Sv39Manager>, module: AddressSpace<Sv39, Sv39Manager>, is_user: bool) {
-    let sections = module.sections;
+pub fn addrspace_add_module(addrspace: &mut AddressSpace<Sv39, Sv39Manager>, module: &AddressSpace<Sv39, Sv39Manager>, is_user: bool) {
+    let sections = &module.sections;
     for (_, addrmap) in sections.iter().enumerate() {
-        let vpn_range = addrmap.vpn_range;
+        let vpn_range = &addrmap.vpn_range;
         let ppn_base = addrmap.ppn_range.start;
-        let mut permission = addrmap.permission;
-        if is_user {
-            // permission.
+        let permission = addrmap.permission;
+        let mut flags: [u8; 5] = *b"____V";
+        if permission.contains(VmFlags::build_from_str("X")) {
+            flags[1] = b'X';
         }
-        addrspace.map_extern(vpn_range, addrmap.ppn_range.start, addrmap.permission);
+        if permission.contains(VmFlags::build_from_str("W")) {
+            flags[2] = b'W';
+        }
+        if permission.contains(VmFlags::build_from_str("R")) {
+            flags[3] = b'R';
+        }
+        if is_user {
+            flags[0] = b'U';
+        }
+        addrspace.map_extern(
+            vpn_range.start..vpn_range.end, 
+            ppn_base, 
+            VmFlags::from_str(unsafe { core::str::from_utf8_unchecked(&flags) }).unwrap()
+        );
     }
 }
 

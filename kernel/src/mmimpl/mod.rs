@@ -21,5 +21,9 @@ pub use addr_space::{
     init_kern_space,
     from_elf,
     PAGE_MASK,
-    PAGE_SIZE
+    PAGE_SIZE,
+    PROC_INIT,
+    SHARE_MODULE_SPACE,
+    addrspace_add_module,
+    load_module
 };

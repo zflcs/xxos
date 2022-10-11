@@ -1,53 +1,22 @@
-﻿use crate::{SHARE_MODULE_SPACE, PROC_INIT, PROCESSOR};
-use crate::mmimpl::{PAGE, Sv39Manager, KERNEL_SPACE, from_elf, PAGE_SIZE};
+﻿use crate::PROCESSOR;
+use crate::mmimpl::{PAGE, Sv39Manager, from_elf, PAGE_SIZE, PROC_INIT, SHARE_MODULE_SPACE, addrspace_add_module};
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::{alloc::Layout};
 use easy_fs::FileHandle;
 use kernel_context::{foreign::ForeignContext, foreign::ForeignPortal, LocalContext};
 use kernel_vm::{
-    page_table::{MmuMeta, Sv39, VmFlags, PPN, VPN, VAddr},
+    page_table::{MmuMeta, Sv39, VmFlags, PPN, VPN},
     AddressSpace,
 };
 use spin::{Mutex};
 use xmas_elf::{
     header::{self, HeaderPt2, Machine},
-    program, ElfFile,
+    ElfFile,
 };
 
 
 
-// use super::id::RecycleAllocator;
-// use super::{thread::Thread};
-// 加载共享模块，并返回段的 ppn 范围
-pub fn elf2space(elf: ElfFile) -> Option<Vec<[usize; 2]>> {
-    const PAGE_SIZE: usize = 1 << Sv39::PAGE_BITS;
-    const PAGE_MASK: usize = PAGE_SIZE - 1;
-    // 内核地址空间，直接将共享模块代码加载进内核空间
-    let address_space= unsafe { KERNEL_SPACE.get_mut().unwrap() };
-    let mut areas = Vec::<[usize; 2]>::new();
-    for program in elf.program_iter() {
-        if !matches!(program.get_type(), Ok(program::Type::Load)) {
-            continue;
-        }
-        let off_file = program.offset() as usize;
-        let len_file = program.file_size() as usize;
-        let off_mem = program.virtual_addr() as usize;
-        let end_mem = off_mem + program.mem_size() as usize;
-        assert_eq!(off_file & PAGE_MASK, off_mem & PAGE_MASK);
-        let start = VAddr::<Sv39>::new(off_mem).floor();
-        let end = VAddr::<Sv39>::new(end_mem).ceil();
-        areas.push([start.base().val(), end.base().val()]);
-        printlib::log::warn!("{:#x}-{:#x}", off_mem, end_mem);
-        address_space.map(
-            VAddr::new(off_mem).floor()..VAddr::new(end_mem).ceil(),
-            &elf.input[off_file..][..len_file],
-            off_mem & PAGE_MASK,
-            VmFlags::build_from_str("XWRV"),
-        );
-    }
-    Some(areas)
-}
 
 #[derive(Eq, PartialEq, Debug, Clone, Copy, Hash, Ord, PartialOrd)]
 pub struct ProcId(usize);
@@ -163,25 +132,8 @@ impl Process {
             );
         }
         // 链接共享库代码，在这里 translate 得到的并不是真正的物理地址
-        let areas = unsafe { SHARE_MODULE_SPACE.get_mut().unwrap() };
-        const FLAGS: VmFlags<Sv39> = VmFlags::build_from_str("____V");
-        for (_, range) in areas.iter().enumerate() {
-            let start_addr = range[0];
-            let count = range[1] - range[0];
-            // printlib::log::debug!("{:#x}-{:#x}", range[0], range[1]);
-            if let Some(ppn) = unsafe{ 
-                KERNEL_SPACE.get_mut().unwrap()
-                .translate_to_p::<u8>(VAddr::new(start_addr), FLAGS) } {
-                let start = VAddr::<Sv39>::new(start_addr);
-                let end = VAddr::<Sv39>::new(start_addr + count);
-                // printlib::log::debug!("{:#x}-{:#x}  {:#x}", start.val(), end.val(), ppn.val() as usize);
-                address_space.map_extern(
-                    start.floor()..end.ceil(),
-                    ppn,
-                    VmFlags::build_from_str("UXWRV"),
-                );
-            }
-        }
+        let unfi_sche = unsafe { SHARE_MODULE_SPACE.get("unfi-sche").unwrap() };
+        addrspace_add_module(&mut address_space, unfi_sche, true);
         // printlib::log::info!("entry {:#x}", _entry);
         // printlib::log::info!("memory {:#x}", elf.find_section_by_name(".bss").unwrap().address() as usize);
         let heapptr = elf.find_section_by_name(".data").unwrap().address() as usize;
