@@ -1,5 +1,6 @@
 
 use super::Sv39Manager;
+use alloc::{collections::BTreeMap, string::String};
 use kernel_vm::{
     page_table::{Sv39, VAddr, VmFlags, PPN, MmuMeta},
     AddressSpace,
@@ -9,12 +10,17 @@ use printlib::log;
 use riscv::register::satp;
 use xmas_elf::{
     program, ElfFile,
+    header::{self, HeaderPt2, Machine},
 };
-use core::str::FromStr;
+use core::{str::FromStr, slice::SlicePattern};
+use crate::fsimpl::{FS, read_all};
+use easy_fs::{OpenFlags, FSManager};
 
 
 // 内核地址空间
 pub static mut KERNEL_SPACE: Once<AddressSpace<Sv39, Sv39Manager>> = Once::new();
+// 共享模块地址空间，根据模块名得到对应的模块地址空间
+pub static mut SHARE_MODULE_SPACE: BTreeMap<String, AddressSpace<Sv39, Sv39Manager>> = BTreeMap::new();
 
 pub fn init_kern_space() {
     let layout = linker::KernelLayout::locate();
@@ -110,5 +116,45 @@ pub fn from_elf(elf: &ElfFile) -> AddressSpace<Sv39, Sv39Manager> {
         );
     }
     address_space
+}
+
+/// 读取共享模块
+pub fn load_module(name: &str) {
+    // 根据模块的 elf 文件得到地址空间以及入口
+    let elf = ElfFile::new(read_all(FS.open(name, OpenFlags::RDONLY).unwrap()).as_slice()).unwrap();
+    let addr_space = from_elf(&elf);
+    let entry = elf_entry(&elf).unwrap();
+    unsafe {
+        SHARE_MODULE_SPACE.insert(String::from(name), addr_space);
+    }
+    let module_init: fn() -> usize = core::mem::transmute(entry);
+    PROC_INIT = module_init();
+}
+
+/// 读取 elf 文件的入口
+pub fn elf_entry(elf: &ElfFile) -> Option<usize> {
+    // elf 入口地址
+    match elf.header.pt2 {
+        HeaderPt2::Header64(pt2)
+            if pt2.type_.as_type() == header::Type::Executable
+                && pt2.machine.as_machine() == Machine::RISC_V =>
+        {
+            Some(pt2.entry_point as usize)
+        }
+        _ => None?,
+    }   
+}
+
+pub fn addrspace_add_module(addrspace: AddressSpace<Sv39, Sv39Manager>, module: AddressSpace<Sv39, Sv39Manager>, is_user: bool) {
+    let sections = module.sections;
+    for (_, addrmap) in sections.iter().enumerate() {
+        let vpn_range = addrmap.vpn_range;
+        let ppn_base = addrmap.ppn_range.start;
+        let mut permission = addrmap.permission;
+        if is_user {
+            // permission.
+        }
+        addrspace.map_extern(vpn_range, addrmap.ppn_range.start, addrmap.permission);
+    }
 }
 

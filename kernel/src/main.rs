@@ -45,6 +45,7 @@ unsafe extern "C" fn _start() -> ! {
 
     #[link_section = ".bss.uninit"]
     static mut STACK: [u8; STACK_SIZE] = [0u8; STACK_SIZE];
+    
 
     core::arch::asm!(
         "la sp, {stack} + {stack_size}",
