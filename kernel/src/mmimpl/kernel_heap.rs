@@ -1,4 +1,4 @@
-﻿use alloc::alloc::handle_alloc_error;
+use alloc::alloc::handle_alloc_error;
 use printlib::log;
 use core::{
     alloc::{GlobalAlloc, Layout},
@@ -8,7 +8,7 @@ use customizable_buddy::{BuddyAllocator, LinkedListBuddy, UsizeBuddy};
 use kernel_vm::page_table::{MmuMeta, Sv39};
 
 /// 初始化全局分配器和内核堆分配器。
-pub fn init() {
+pub fn heap_init() {
     /// 4 KiB 页类型。
     #[repr(C, align(4096))]
     pub struct Memory<const N: usize>([u8; N]);
@@ -31,7 +31,7 @@ pub fn init() {
 }
 
 /// 测试内核堆分配。
-pub fn test() {
+pub fn heap_test() {
     let mut vec = vec![0; 1234];
     for (i, val) in vec.iter_mut().enumerate() {
         *val = i;

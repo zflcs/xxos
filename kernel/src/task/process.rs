@@ -1,5 +1,5 @@
-﻿use crate::{SHARE_MODULE_SPACE, KERNEL_SPACE, PROC_INIT};
-use crate::{heap_alloc::PAGE, Sv39Manager};
+use crate::{SHARE_MODULE_SPACE, mmimpl::KERNEL_SPACE, PROC_INIT, PROCESSOR};
+use crate::{mmimpl::PAGE, mmimpl::Sv39Manager};
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::{alloc::Layout, str::FromStr};
@@ -95,9 +95,7 @@ pub struct Process {
 impl Process {
     pub fn exec(&mut self, elf: ElfFile) {
         let proc = Process::from_elf(elf).unwrap();
-        let tramp = self.address_space.tramp;
         self.address_space = proc.address_space;
-        self.address_space.map_portal(tramp);
         self.context = proc.context;
         self.entry = proc.entry;
         self.heapptr = proc.heapptr;
@@ -239,6 +237,11 @@ impl Process {
         let mut context = LocalContext::user(primary_enter);
         let satp = (8 << 60) | address_space.root_ppn().val();
         *context.sp_mut() = 1 << 38;
+        address_space.map_portal(
+            VPN::MAX, 
+            PPN::<Sv39>::new(unsafe { &PROCESSOR.portal } as *const _ as usize >> Sv39::PAGE_BITS),
+            VmFlags::build_from_str("XWRV"),
+        );
         Some(Self {
             pid: ProcId::generate(),
             parent: ProcId(usize::MAX),

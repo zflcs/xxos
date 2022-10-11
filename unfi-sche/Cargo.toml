@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 printlib ={ path = "../printlib"}
 customizable-buddy = "0.0.2"
-sbi-rt = { git = "https://github.com/rustsbi/sbi-rt", branch = "dev" }
+sbi-rt = "0.0.1"
 riscv = "0.8.0"
 syscall = { path = "../syscall", features = ["user"] }
 kernel-context ={ path = "../kernel-context"}
