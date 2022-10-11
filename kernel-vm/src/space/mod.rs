@@ -109,6 +109,7 @@ impl<Meta: VmMeta, M: PageManager<Meta>> AddressSpace<Meta, M> {
 
     /// 遍历地址空间，将其中的地址映射添加进自己的地址空间中，重新分配物理页并拷贝所有数据及代码
     pub fn cloneself(&self, new_addrspace: &mut AddressSpace<Meta, M>) {
+        let root = self.root();
         let sections= &self.sections;
         for (_, addr_map) in sections.iter().enumerate() {
             // 段的范围
@@ -119,15 +120,24 @@ impl<Meta: VmMeta, M: PageManager<Meta>> AddressSpace<Meta, M> {
             let size = count << Meta::PAGE_BITS;
             // 段的属性
             let mut permission = addr_map.permission;
+
+            let mut visitor = Visitor::new(self);
+            root.walk(Pos::new(vpn_range.start, 0), &mut visitor);
             // 段的起始物理地址
-            let data_ptr = (addr_map.ppn_range.start.val() << Meta::PAGE_BITS) as *mut u8;
+            let mut data_ptr = visitor
+                .ans()
+                .filter(|pte| pte.is_valid())
+                .map(|pte| unsafe {
+                        NonNull::new_unchecked(self.page_manager.p_to_v::<u8>(pte.ppn()).as_ptr())
+                    })
+                .unwrap();
             
             // 分配 count 个 flags 属性的物理页面
             let paddr = new_addrspace.page_manager.allocate(count, &mut permission);
             let ppn = new_addrspace.page_manager.v_to_p(paddr);
             unsafe {
                 use core::slice::from_raw_parts_mut as slice;
-                let data = slice(data_ptr, size);
+                let data = slice(data_ptr.as_mut(), size);
                 let ptr = paddr.as_ptr();
                 slice(ptr, size).copy_from_slice(data);
             }

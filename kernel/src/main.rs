@@ -87,12 +87,7 @@ extern "C" fn rust_main() -> ! {
     println!("**************/");
     {
         let initproc = read_all(FS.open("initproc", OpenFlags::RDONLY).unwrap());
-        if let Some(mut process) = Process::from_elf(ElfFile::new(initproc.as_slice()).unwrap()) {
-            process.address_space.map_portal(
-                VPN::MAX, 
-                PPN::<Sv39>::new(unsafe { &PROCESSOR.portal } as *const _ as usize >> Sv39::PAGE_BITS),
-                VmFlags::build_from_str("XWRV"),
-            );
+        if let Some(process) = Process::from_elf(ElfFile::new(initproc.as_slice()).unwrap()) {
             unsafe { PROCESSOR.add(process.pid, process) };
         }
     }

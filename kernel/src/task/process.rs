@@ -1,4 +1,5 @@
 ﻿use crate::mmimpl::{PAGE, Sv39Manager};
+use crate::PROCESSOR;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::{alloc::Layout, str::FromStr};
@@ -144,6 +145,11 @@ impl Process {
         let mut context = LocalContext::user(entry);
         let satp = (8 << 60) | address_space.root_ppn().val();
         *context.sp_mut() = 1 << 38;
+        address_space.map_portal(
+            VPN::MAX, 
+            PPN::<Sv39>::new(unsafe { &PROCESSOR.portal } as *const _ as usize >> Sv39::PAGE_BITS),
+            VmFlags::build_from_str("XWRV"),
+        );
         Some(Self {
             pid: TaskId::generate(),
             parent: TaskId(usize::MAX),
