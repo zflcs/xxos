@@ -3,11 +3,13 @@
 #![no_std]
 #![deny(warnings, missing_docs)]
 
+
 use core::{
     fmt::{Arguments, Write},
     str::FromStr,
 };
 use spin::Once;
+use spin::Mutex;
 
 /// 向用户提供 `log`。
 pub extern crate log;
@@ -30,10 +32,12 @@ pub trait Console: Sync {
 
 /// 库找到输出的方法：保存一个对象引用，这是一种单例。
 static CONSOLE: Once<&'static dyn Console> = Once::new();
+static LOGGER: Once<Mutex<Logger>> = Once::new();
 
 /// 用户调用这个函数设置输出的方法。
 pub fn init_console(console: &'static dyn Console) {
     CONSOLE.call_once(|| console);
+    LOGGER.call_once(|| Mutex::new(Logger));
     log::set_logger(&Logger).unwrap();
 }
 
@@ -68,7 +72,7 @@ pub fn test_log() {
 #[doc(hidden)]
 #[inline]
 pub fn _print(args: Arguments) {
-    Logger.write_fmt(args).unwrap();
+    LOGGER.get().unwrap().lock().write_fmt(args).unwrap();
 }
 
 /// 格式化打印。
@@ -84,8 +88,11 @@ macro_rules! print {
 macro_rules! println {
     () => ($crate::print!("\n"));
     ($($arg:tt)*) => {{
-        $crate::_print(core::format_args!($($arg)*));
-        $crate::println!();
+        let hart_id: usize;
+        unsafe {
+            core::arch::asm!("mv {}, tp", out(reg) hart_id, options(nomem, nostack));
+        }
+        $crate::print!("[hart {}] {}\n", hart_id, core::format_args!($($arg)*));
     }}
 }
 

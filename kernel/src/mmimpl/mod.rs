@@ -21,5 +21,6 @@ pub use addr_space::{
     init_kern_space,
     from_elf,
     PAGE_MASK,
-    PAGE_SIZE
+    PAGE_SIZE,
+    activate_space,
 };

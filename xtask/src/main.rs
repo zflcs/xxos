@@ -112,7 +112,7 @@ impl QemuArgs {
             .arg(PROJECT.join("rustsbi-qemu.bin"))
             .arg("-kernel")
             .arg(objcopy(elf, true))
-            .args(&["-smp", &self.smp.unwrap_or(1).to_string()])
+            .args(&["-smp", &self.smp.unwrap_or(4).to_string()])
             .args(&["-serial", "mon:stdio"])
             .args(&[
                 "-drive",

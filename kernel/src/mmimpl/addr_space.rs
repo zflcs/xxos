@@ -18,7 +18,10 @@ pub static mut KERNEL_SPACE: Once<AddressSpace<Sv39, Sv39Manager>> = Once::new()
 
 pub fn init_kern_space() {
     let layout = linker::KernelLayout::locate();
-    unsafe { KERNEL_SPACE.call_once(|| kernel_space(layout)) };
+    unsafe { 
+        KERNEL_SPACE.call_once(|| kernel_space(layout));
+        activate_space(KERNEL_SPACE.get_mut().unwrap());
+    }
 }
 
 /// 外设映射到内存中的区域
@@ -71,9 +74,11 @@ fn kernel_space(layout: linker::KernelLayout) -> AddressSpace<Sv39, Sv39Manager>
             VmFlags::build_from_str("_WRV"),
         );
     }
-
-    unsafe { satp::set(satp::Mode::Sv39, 0, space.root_ppn().val()) };
     space
+}
+
+pub fn activate_space(addrspace: &AddressSpace<Sv39, Sv39Manager>) {
+    unsafe { satp::set(satp::Mode::Sv39, 0, addrspace.root_ppn().val()) };
 }
 
 pub const PAGE_SIZE: usize = 1 << Sv39::PAGE_BITS;
