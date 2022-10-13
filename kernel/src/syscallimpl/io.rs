@@ -1,6 +1,6 @@
 
 use super::{SyscallContext, READABLE, WRITEABLE};
-use crate::{PROCESSOR, FS};
+use crate::{processor, FS};
 use syscall::IO;
 use printlib::log;
 use easy_fs::{UserBuffer, OpenFlags, FSManager};
@@ -13,7 +13,7 @@ use spin::Mutex;
 impl IO for SyscallContext {
     #[inline]
     fn write(&self, fd: usize, buf: usize, count: usize) -> isize {
-        let current = unsafe { PROCESSOR.current().unwrap() };
+        let current = processor().current().unwrap();
         if let Some(ptr) = current.address_space.translate(VAddr::new(buf), READABLE) {
             if fd == 0 {
                 print!("{}", unsafe {
@@ -53,7 +53,7 @@ impl IO for SyscallContext {
     #[inline]
     #[allow(deprecated)]
     fn read(&self, fd: usize, buf: usize, count: usize) -> isize {
-        let current = unsafe { PROCESSOR.current().unwrap() };
+        let current = processor().current().unwrap();
         if fd == 0 || fd >= current.fd_table.len() {
             return -1;
         }
@@ -98,7 +98,7 @@ impl IO for SyscallContext {
     #[inline]
     fn open(&self, path: usize, flags: usize) -> isize {
         // FS.open(, flags)
-        let current = unsafe { PROCESSOR.current().unwrap() };
+        let current = processor().current().unwrap();
         if let Some(ptr) = current.address_space.translate(VAddr::new(path), READABLE) {
             let mut string = String::new();
             let mut raw_ptr: *mut u8 = ptr.as_ptr();
@@ -130,7 +130,7 @@ impl IO for SyscallContext {
 
     #[inline]
     fn close(&self, fd: usize) -> isize {
-        let current = unsafe { PROCESSOR.current().unwrap() };
+        let current = processor().current().unwrap();
         if fd >= current.fd_table.len() || current.fd_table[fd].is_none() {
             return -1;
         }

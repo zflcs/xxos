@@ -1,6 +1,6 @@
 
 use super::{SyscallContext, WRITEABLE};
-use crate::PROCESSOR;
+use crate::processor;
 use syscall::{ClockId, Clock, TimeSpec};
 use printlib::log;
 use kernel_vm::page_table::VAddr;
@@ -10,7 +10,7 @@ impl Clock for SyscallContext {
     fn clock_gettime(&self, clock_id: ClockId, tp: usize) -> isize {
         match clock_id {
             ClockId::CLOCK_MONOTONIC => {
-                if let Some(mut ptr) = unsafe { PROCESSOR.current().unwrap() }
+                if let Some(mut ptr) = processor().current().unwrap()
                     .address_space
                     .translate(VAddr::new(tp), WRITEABLE)
                 {

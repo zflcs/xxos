@@ -11,6 +11,7 @@ mod consoleimpl;
 mod syscallimpl;
 mod task;
 mod mmimpl;
+mod config;
 
 #[macro_use]
 extern crate printlib;
@@ -27,7 +28,7 @@ use kernel_vm::page_table::{VmFlags, Sv39, PPN, MmuMeta, VPN};
 use printlib::log;
 use easy_fs::{FSManager, OpenFlags};
 
-use processorimpl::{init_processor, PROCESSOR};
+use processorimpl::{init_processor, processor};
 use riscv::register::*;
 use sbi_rt::*;
 use xmas_elf::ElfFile;
@@ -41,7 +42,7 @@ use xmas_elf::ElfFile;
 unsafe extern "C" fn _start(hartid: usize, opaque: usize) -> ! {
     // todo：目前假设是只有 4 个核启动，之后需要动态的实现
     const STACK_SIZE_PER_HART: usize = 16 * 4096;
-    const TOTAL_STACK_SIZE: usize = STACK_SIZE_PER_HART * 4;
+    const TOTAL_STACK_SIZE: usize = STACK_SIZE_PER_HART * config::MAX_HART;
 
     #[link_section = ".bss.uninit"]
     static mut STACK: [u8; TOTAL_STACK_SIZE] = [0u8; TOTAL_STACK_SIZE];
@@ -104,11 +105,11 @@ extern "C" fn primary_main() -> ! {
     // 传送门映射到内核地址空间
     unsafe { KERNEL_SPACE.get_mut().unwrap().map_portal(
         VPN::MAX, 
-        PPN::<Sv39>::new( &PROCESSOR.portal as *const _ as usize >> Sv39::PAGE_BITS),
+        PPN::<Sv39>::new( &processor().portal as *const _ as usize >> Sv39::PAGE_BITS),
         VmFlags::build_from_str("XWRV"),
     )};
     // 初始化完毕，通过 hsm 启动副 cpu
-    for i in 0..4{
+    for i in 0..config::MAX_HART{
         if i != hart_id() {
             sbi_rt::hart_start(i, _start as usize, 0);
         }
@@ -123,14 +124,14 @@ extern "C" fn primary_main() -> ! {
     {
         let initproc = read_all(FS.open("initproc", OpenFlags::RDONLY).unwrap());
         if let Some(process) = Process::from_elf(ElfFile::new(initproc.as_slice()).unwrap()) {
-            unsafe { PROCESSOR.add(process.pid, process) };
+            processor().add(process.pid, process);
         }
     }
 
     const PROTAL_TRANSIT: usize = VPN::<Sv39>::MAX.base().val();
     loop {
-        if let Some(task) = unsafe { PROCESSOR.find_next() } {
-            task.execute(unsafe { &mut PROCESSOR.portal }, PROTAL_TRANSIT);
+        if let Some(task) = processor().find_next() {
+            task.execute(&mut processor().portal, PROTAL_TRANSIT);
             match scause::read().cause() {
                 scause::Trap::Exception(scause::Exception::UserEnvCall) => {
                     use syscall::{SyscallId as Id, SyscallResult as Ret};
@@ -140,22 +141,22 @@ extern "C" fn primary_main() -> ! {
                     let args = [ctx.a(0), ctx.a(1), ctx.a(2), ctx.a(3), ctx.a(4), ctx.a(5)];
                     match syscall::handle(id, args) {
                         Ret::Done(ret) => match id {
-                            Id::EXIT => unsafe { PROCESSOR.make_current_exited() },
+                            Id::EXIT => processor().make_current_exited(),
                             _ => {
                                 let ctx = &mut task.context.context;
                                 *ctx.a_mut(0) = ret as _;
-                                unsafe { PROCESSOR.make_current_suspend() };
+                                processor().make_current_suspend();
                             }
                         },
                         Ret::Unsupported(_) => {
                             log::info!("id = {id:?}");
-                            unsafe { PROCESSOR.make_current_exited() };
+                            processor().make_current_exited();
                         }
                     }
                 }
                 e => {
                     log::error!("unsupported trap: {e:?}");
-                    unsafe { PROCESSOR.make_current_exited() };
+                    processor().make_current_exited();
                 }
             }
         } else {

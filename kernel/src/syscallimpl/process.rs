@@ -1,6 +1,6 @@
 use super::{SyscallContext, READABLE, WRITEABLE};
 use crate::{
-    PROCESSOR, read_all, FS,
+    processor, read_all, FS,
     task::process::TaskId,
 };
 use syscall::Process;
@@ -12,8 +12,8 @@ use kernel_vm::page_table::VAddr;
 impl Process for SyscallContext {
     #[inline]
     fn exit(&self, _status: usize) -> isize {
-        let current = unsafe { PROCESSOR.current().unwrap() };
-        if let Some(parent) = unsafe { PROCESSOR.get_task(current.parent) } {
+        let current = processor().current().unwrap();
+        if let Some(parent) = processor().get_task(current.parent) {
             let pair = parent
                 .children
                 .iter()
@@ -30,19 +30,17 @@ impl Process for SyscallContext {
     }
 
     fn fork(&self) -> isize {
-        let current = unsafe { PROCESSOR.current().unwrap() };
+        let current = processor().current().unwrap();
         let mut child_proc = current.fork().unwrap();
         let pid = child_proc.pid;
         let context = &mut child_proc.context.context;
         *context.a_mut(0) = 0 as _;
-        unsafe {
-            PROCESSOR.add(pid, child_proc);
-        }
+        processor().add(pid, child_proc);
         pid.get_val() as isize
     }
 
     fn exec(&self, path: usize, count: usize) -> isize {
-        let current = unsafe { PROCESSOR.current().unwrap() };
+        let current = processor().current().unwrap();
         if let Some(ptr) = current.address_space.translate(VAddr::new(path), READABLE) {
             let name = unsafe {
                 core::str::from_utf8_unchecked(core::slice::from_raw_parts(ptr.as_ptr(), count))
@@ -61,7 +59,7 @@ impl Process for SyscallContext {
     // pid 为具体的某个值，表示需要等待某个子进程结束，因此只需要在 TASK_MANAGER 中查找是否有任务
     // 简化了进程的状态模型
     fn wait(&self, pid: isize, exit_code_ptr: usize) -> isize {
-        let current = unsafe { PROCESSOR.current().unwrap() };
+        let current = processor().current().unwrap();
         if let Some(mut ptr) = current
             .address_space
             .translate(VAddr::new(exit_code_ptr), WRITEABLE)
@@ -75,7 +73,7 @@ impl Process for SyscallContext {
                 return -1;
             }
         } else {
-            if unsafe { PROCESSOR.get_task(TaskId::from(pid as usize)).is_none() } {
+            if processor().get_task(TaskId::from(pid as usize)).is_none() {
                 return pid;
             } else {
                 return -1;

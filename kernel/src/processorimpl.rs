@@ -1,39 +1,49 @@
-use crate::task::process::{Process, TaskId};
+use crate::{task::process::{Process, TaskId}, hart_id};
 use alloc::collections::{BTreeMap, VecDeque};
 use kernel_context::foreign::ForeignPortal;
 use task_manage::{Manage, Processor};
+use alloc::sync::Arc;
+use spin::Mutex;
+use crate::config::MAX_HART;
 
-pub static mut PROCESSOR: Processor<Process, TaskId, ProcManager> = Processor::new();
+const PROCESS: Processor<Process, TaskId, ProcManager> = Processor::new();
 
+pub static mut PROCESSORS: [Processor<Process, TaskId, ProcManager>; MAX_HART] = [PROCESS; MAX_HART];
 pub fn init_processor() {
-    let manager = ProcManager::new();
-    // 异界传送门
-    let portal = ForeignPortal::new();
-    unsafe {
-        PROCESSOR.set_manager(manager);
-        PROCESSOR.set_portal(portal);
+    static mut MANAGER: BTreeMap::<TaskId, Process> = BTreeMap::new();
+    let ready_queue = Arc::new(Mutex::new(VecDeque::<TaskId>::new()));
+    // 初始化所有的处理器
+    for i in 0..MAX_HART {
+        unsafe {
+            PROCESSORS[i].set_manager(ProcManager::new(&mut MANAGER, ready_queue.clone()));
+            PROCESSORS[i].set_portal(ForeignPortal::new());
+        }
     }
+}
+
+pub fn processor() -> &'static mut Processor<Process, TaskId, ProcManager<'static>>{
+    unsafe{ &mut PROCESSORS[hart_id()] }
 }
 
 /// 任务管理器
 /// `tasks` 中保存所有的任务实体
 /// `ready_queue` 删除任务的实体
-pub struct ProcManager {
-    tasks: BTreeMap<TaskId, Process>,
-    ready_queue: VecDeque<TaskId>,
+pub struct ProcManager<'a> {
+    tasks: &'a mut BTreeMap<TaskId, Process>,
+    ready_queue: Arc<Mutex<VecDeque<TaskId>>>,
 }
 
-impl ProcManager {
+impl<'a> ProcManager<'a> {
     /// 新建任务管理器
-    pub fn new() -> Self {
+    pub fn new(tasks: &'a mut BTreeMap<TaskId, Process>, ready_queue: Arc<Mutex<VecDeque<TaskId>>>) -> Self {
         Self {
-            tasks: BTreeMap::new(),
-            ready_queue: VecDeque::new(),
+            tasks,
+            ready_queue,
         }
     }
 }
 
-impl Manage<Process, TaskId> for ProcManager {
+impl<'a> Manage<Process, TaskId> for ProcManager<'a> {
     /// 插入一个新任务
     #[inline]
     fn insert(&mut self, id: TaskId, task: Process) {
@@ -51,10 +61,10 @@ impl Manage<Process, TaskId> for ProcManager {
     }
     /// 添加 id 进入调度队列
     fn add(&mut self, id: TaskId) {
-        self.ready_queue.push_back(id);
+        self.ready_queue.lock().push_back(id);
     }
     /// 从调度队列中取出 id
     fn fetch(&mut self) -> Option<TaskId> {
-        self.ready_queue.pop_front()
+        self.ready_queue.lock().pop_front()
     }
 }

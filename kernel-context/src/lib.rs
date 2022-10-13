@@ -168,8 +168,8 @@ unsafe extern "C" fn execute_naked() {
             .endm
             .macro SAVE_ALL
                 sd x1, 1*8(sp)
-                .set n, 3
-                .rept 29
+                .set n, 5
+                .rept 27
                     SAVE %n
                     .set n, n+1
                 .endr
@@ -180,8 +180,8 @@ unsafe extern "C" fn execute_naked() {
             .endm
             .macro LOAD_ALL
                 ld x1, 1*8(sp)
-                .set n, 3
-                .rept 29
+                .set n, 5
+                .rept 27
                     LOAD %n
                     .set n, n+1
                 .endr
