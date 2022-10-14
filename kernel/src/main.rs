@@ -104,16 +104,17 @@ extern "C" fn primary_main() -> ! {
     
     // 传送门映射到内核地址空间
     unsafe { KERNEL_SPACE.get_mut().unwrap().map_portal(
-        VPN::MAX, 
+        VPN::<Sv39>::new(processor().portal_transit >> Sv39::PAGE_BITS),
+        // VPN::MAX,
         PPN::<Sv39>::new( &processor().portal as *const _ as usize >> Sv39::PAGE_BITS),
         VmFlags::build_from_str("XWRV"),
     )};
     // 初始化完毕，通过 hsm 启动副 cpu
-    for i in 0..config::MAX_HART{
-        if i != hart_id() {
-            sbi_rt::hart_start(i, _start as usize, 0);
-        }
-    }
+    // for i in 0..config::MAX_HART{
+    //     if i != hart_id() {
+    //         sbi_rt::hart_start(i, _start as usize, 0);
+    //     }
+    // }
     // 加载应用程序
     // TODO!
     println!("/**** APPS ****");
@@ -127,11 +128,27 @@ extern "C" fn primary_main() -> ! {
             processor().add(process.pid, process);
         }
     }
+    run_task();
+    system_reset(RESET_TYPE_SHUTDOWN, RESET_REASON_NO_REASON);
+    unreachable!()
+}
 
-    const PROTAL_TRANSIT: usize = VPN::<Sv39>::MAX.base().val();
+fn secondary_main() {
+    // 初始化 satp 寄存器
+    unsafe{ activate_space(KERNEL_SPACE.get_mut().unwrap()); }
+    // unsafe { KERNEL_SPACE.get_mut().unwrap().map_portal(
+    //     VPN::<Sv39>::new(processor().portal_transit >> Sv39::PAGE_BITS),
+    //     PPN::<Sv39>::new( &processor().portal as *const _ as usize >> Sv39::PAGE_BITS),
+    //     VmFlags::build_from_str("XWRV"),
+    // )};
+    // run_task();
+    sbi_rt::hart_stop();
+}
+
+fn run_task() {
     loop {
         if let Some(task) = processor().find_next() {
-            task.execute(&mut processor().portal, PROTAL_TRANSIT);
+            task.execute(&mut processor().portal, processor().portal_transit);
             match scause::read().cause() {
                 scause::Trap::Exception(scause::Exception::UserEnvCall) => {
                     use syscall::{SyscallId as Id, SyscallResult as Ret};
@@ -164,16 +181,6 @@ extern "C" fn primary_main() -> ! {
             break;
         }
     }
-
-    system_reset(RESET_TYPE_SHUTDOWN, RESET_REASON_NO_REASON);
-    unreachable!()
-}
-
-fn secondary_main() -> ! {
-    // 初始化 satp 寄存器
-    unsafe{ activate_space(KERNEL_SPACE.get_mut().unwrap()); }
-    log::debug!("start init...");
-    loop { }
 }
 
 

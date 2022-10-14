@@ -4,7 +4,10 @@ use kernel_context::foreign::ForeignPortal;
 use task_manage::{Manage, Processor};
 use alloc::sync::Arc;
 use spin::Mutex;
-use crate::config::MAX_HART;
+use crate::{config::MAX_HART, mmimpl::PAGE_SIZE};
+use kernel_vm::page_table::{VPN, Sv39};
+
+const PROTAL_TRANSIT: usize = VPN::<Sv39>::MAX.base().val();
 
 const PROCESS: Processor<Process, TaskId, ProcManager> = Processor::new();
 
@@ -15,6 +18,7 @@ pub fn init_processor() {
     // 初始化所有的处理器
     for i in 0..MAX_HART {
         unsafe {
+            PROCESSORS[i].portal_transit = PROTAL_TRANSIT - i * PAGE_SIZE;
             PROCESSORS[i].set_manager(ProcManager::new(&mut MANAGER, ready_queue.clone()));
             PROCESSORS[i].set_portal(ForeignPortal::new());
         }

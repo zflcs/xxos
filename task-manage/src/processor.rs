@@ -7,6 +7,8 @@ use kernel_context::foreign::ForeignPortal;
 pub struct Processor<T, I: Copy + Ord, M: Manage<T, I>> {
     /// 异界传送门
     pub portal: ForeignPortal,
+    /// 异界传送门虚拟地址
+    pub portal_transit: usize,
     // 进程对象管理和调度
     manager: Option<M>,
     // 当前正在运行的进程 ID
@@ -19,6 +21,7 @@ impl<T, I: Copy + Ord, M: Manage<T, I>> Processor<T, I, M> {
     pub const fn new() -> Self {
         Self {
             portal: ForeignPortal::EMPTY,
+            portal_transit: 0,
             manager: None,
             current: None,
             phantom_data: PhantomData::<T>,

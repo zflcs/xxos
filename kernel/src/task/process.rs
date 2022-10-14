@@ -1,5 +1,6 @@
-﻿use crate::mmimpl::{PAGE, Sv39Manager, from_elf, PAGE_SIZE};
-use crate::processor;
+﻿// use crate::config::MAX_HART;
+use crate::mmimpl::{PAGE, Sv39Manager, from_elf, PAGE_SIZE};
+use crate::processorimpl::{processor};
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::{alloc::Layout};
@@ -117,11 +118,14 @@ impl Process {
         let satp = (8 << 60) | address_space.root_ppn().val();
         *context.sp_mut() = 1 << 38;
         // 添加异界传送门映射
+        // for i in 0..MAX_HART {
         address_space.map_portal(
-            VPN::MAX, 
-            PPN::<Sv39>::new(&processor().portal as *const _ as usize >> Sv39::PAGE_BITS),
+            // VPN::MAX, 
+            VPN::<Sv39>::new( processor().portal_transit >> Sv39::PAGE_BITS),
+            PPN::<Sv39>::new( &processor().portal as *const _ as usize >> Sv39::PAGE_BITS),
             VmFlags::build_from_str("XWRV"),
         );
+        // }
         Some(Self {
             pid: TaskId::generate(),
             parent: TaskId(usize::MAX),
