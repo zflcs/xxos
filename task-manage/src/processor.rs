@@ -7,6 +7,8 @@ use kernel_context::foreign::ForeignPortal;
 pub struct Processor<T, I: Copy + Ord, M: Manage<T, I>> {
     /// 异界传送门
     pub portal: ForeignPortal,
+    /// 异界传送门虚拟页号
+    pub portal_vpn: usize,
     /// 异界传送门虚拟地址
     pub portal_transit: usize,
     // 进程对象管理和调度
@@ -21,6 +23,7 @@ impl<T, I: Copy + Ord, M: Manage<T, I>> Processor<T, I, M> {
     pub const fn new() -> Self {
         Self {
             portal: ForeignPortal::EMPTY,
+            portal_vpn: 0,
             portal_transit: 0,
             manager: None,
             current: None,

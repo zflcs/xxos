@@ -1,6 +1,6 @@
 ﻿// use crate::config::MAX_HART;
 use crate::mmimpl::{PAGE, Sv39Manager, from_elf, PAGE_SIZE};
-use crate::processorimpl::{processor};
+use crate::processorimpl::{processor, PROCESSORS};
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::{alloc::Layout};
@@ -15,6 +15,7 @@ use xmas_elf::{
     header::{self, HeaderPt2, Machine},
     ElfFile,
 };
+use crate::config::MAX_HART;
 
 #[derive(Eq, PartialEq, Debug, Clone, Copy, Hash, Ord, PartialOrd)]
 pub struct TaskId(usize);
@@ -118,14 +119,14 @@ impl Process {
         let satp = (8 << 60) | address_space.root_ppn().val();
         *context.sp_mut() = 1 << 38;
         // 添加异界传送门映射
-        // for i in 0..MAX_HART {
-        address_space.map_portal(
-            // VPN::MAX, 
-            VPN::<Sv39>::new( processor().portal_transit >> Sv39::PAGE_BITS),
-            PPN::<Sv39>::new( &processor().portal as *const _ as usize >> Sv39::PAGE_BITS),
-            VmFlags::build_from_str("XWRV"),
-        );
-        // }
+        for i in 0..MAX_HART {
+            address_space.map_portal(
+                // VPN::MAX, 
+                VPN::<Sv39>::new( processor().portal_vpn),
+                PPN::<Sv39>::new( &processor().portal as *const _ as usize >> Sv39::PAGE_BITS),
+                VmFlags::build_from_str("XWRV"),
+            );
+        }
         Some(Self {
             pid: TaskId::generate(),
             parent: TaskId(usize::MAX),

@@ -41,7 +41,7 @@ use xmas_elf::ElfFile;
 #[link_section = ".text.entry"]
 unsafe extern "C" fn _start(hartid: usize, opaque: usize) -> ! {
     // todo：目前假设是只有 4 个核启动，之后需要动态的实现
-    const STACK_SIZE_PER_HART: usize = 16 * 4096;
+    const STACK_SIZE_PER_HART: usize = 32 * 4096;
     const TOTAL_STACK_SIZE: usize = STACK_SIZE_PER_HART * config::MAX_HART;
 
     #[link_section = ".bss.uninit"]
@@ -104,11 +104,12 @@ extern "C" fn primary_main() -> ! {
     
     // 传送门映射到内核地址空间
     unsafe { KERNEL_SPACE.get_mut().unwrap().map_portal(
-        VPN::<Sv39>::new(processor().portal_transit >> Sv39::PAGE_BITS),
-        // VPN::MAX,
+        VPN::<Sv39>::new(processor().portal_vpn),
         PPN::<Sv39>::new( &processor().portal as *const _ as usize >> Sv39::PAGE_BITS),
         VmFlags::build_from_str("XWRV"),
     )};
+    // log::debug!("{:?}", unsafe { KERNEL_SPACE.get().unwrap() });
+
     // 初始化完毕，通过 hsm 启动副 cpu
     // for i in 0..config::MAX_HART{
     //     if i != hart_id() {
