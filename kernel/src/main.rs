@@ -28,11 +28,11 @@ use kernel_vm::page_table::{VmFlags, Sv39, PPN, MmuMeta, VPN};
 use printlib::log;
 use easy_fs::{FSManager, OpenFlags};
 
-use processorimpl::{init_processor, processor};
+use processorimpl::{init_processor, processor, PROCESSORS};
 use riscv::register::*;
 use sbi_rt::*;
 use xmas_elf::ElfFile;
-
+use config::MAX_HART;
 /// Supervisor 汇编入口。
 ///
 /// 设置栈并跳转到 Rust。
@@ -103,19 +103,21 @@ extern "C" fn primary_main() -> ! {
     mmimpl::init_kern_space();
     
     // 传送门映射到内核地址空间
-    unsafe { KERNEL_SPACE.get_mut().unwrap().map_portal(
-        VPN::<Sv39>::new(processor().portal_vpn),
-        PPN::<Sv39>::new( &processor().portal as *const _ as usize >> Sv39::PAGE_BITS),
-        VmFlags::build_from_str("XWRV"),
-    )};
+    for i in 0..MAX_HART {
+        unsafe{ KERNEL_SPACE.get_mut().unwrap().map_portal(
+            VPN::<Sv39>::new( PROCESSORS[i].portal_vpn ),
+            PPN::<Sv39>::new( &PROCESSORS[i].portal as *const _ as usize >> Sv39::PAGE_BITS),
+            VmFlags::build_from_str("XWRV"),
+        ) }
+    }
     // log::debug!("{:?}", unsafe { KERNEL_SPACE.get().unwrap() });
 
     // 初始化完毕，通过 hsm 启动副 cpu
-    // for i in 0..config::MAX_HART{
-    //     if i != hart_id() {
-    //         sbi_rt::hart_start(i, _start as usize, 0);
-    //     }
-    // }
+    for i in 0..config::MAX_HART{
+        if i != hart_id() {
+            sbi_rt::hart_start(i, _start as usize, 0);
+        }
+    }
     // 加载应用程序
     // TODO!
     println!("/**** APPS ****");
@@ -137,13 +139,8 @@ extern "C" fn primary_main() -> ! {
 fn secondary_main() {
     // 初始化 satp 寄存器
     unsafe{ activate_space(KERNEL_SPACE.get_mut().unwrap()); }
-    // unsafe { KERNEL_SPACE.get_mut().unwrap().map_portal(
-    //     VPN::<Sv39>::new(processor().portal_transit >> Sv39::PAGE_BITS),
-    //     PPN::<Sv39>::new( &processor().portal as *const _ as usize >> Sv39::PAGE_BITS),
-    //     VmFlags::build_from_str("XWRV"),
-    // )};
-    // run_task();
-    sbi_rt::hart_stop();
+    run_task();
+    // sbi_rt::hart_stop();
 }
 
 fn run_task() {

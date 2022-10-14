@@ -1,6 +1,6 @@
 ﻿// use crate::config::MAX_HART;
 use crate::mmimpl::{PAGE, Sv39Manager, from_elf, PAGE_SIZE};
-use crate::processorimpl::{processor, PROCESSORS};
+use crate::processorimpl::{ PROCESSORS};
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::{alloc::Layout};
@@ -122,8 +122,8 @@ impl Process {
         for i in 0..MAX_HART {
             address_space.map_portal(
                 // VPN::MAX, 
-                VPN::<Sv39>::new( processor().portal_vpn),
-                PPN::<Sv39>::new( &processor().portal as *const _ as usize >> Sv39::PAGE_BITS),
+                VPN::<Sv39>::new( unsafe{PROCESSORS[i].portal_vpn }),
+                PPN::<Sv39>::new( unsafe{&PROCESSORS[i].portal} as *const _ as usize >> Sv39::PAGE_BITS),
                 VmFlags::build_from_str("XWRV"),
             );
         }
