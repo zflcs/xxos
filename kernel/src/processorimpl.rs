@@ -1,14 +1,10 @@
-use crate::{task::process::{Process, TaskId}, hart_id, mmimpl::PAGE_SIZE};
+use crate::{task::process::{Process, TaskId}, hart_id};
 use alloc::collections::{BTreeMap, VecDeque};
-use kernel_context::foreign::ForeignPortal;
 use task_manage::{Manage, Processor};
 use alloc::sync::Arc;
 use spin::Mutex;
 use crate::{config::MAX_HART};
-use kernel_vm::page_table::{VPN, Sv39};
 
-const PROTAL_VPN: usize = VPN::<Sv39>::MAX.val();
-const PROTAL_TRANSIT: usize = VPN::<Sv39>::MAX.base().val();
 
 const PROCESSOR: Processor<Process, TaskId, ProcManager> = Processor::new();
 
@@ -19,11 +15,7 @@ pub fn init_processor() {
     // 初始化所有的处理器
     for i in 0..MAX_HART {
         unsafe {
-            // const PROTAL_TRANSIT: VPN<Sv39> = VPN::new(1 << 26);
-            PROCESSORS[i].portal_vpn = PROTAL_VPN - i;
-            PROCESSORS[i].portal_transit = PROTAL_TRANSIT - i * PAGE_SIZE;
             PROCESSORS[i].set_manager(ProcManager::new(&mut MANAGER, ready_queue.clone()));
-            PROCESSORS[i].set_portal(ForeignPortal::new());
         }
     }
 }

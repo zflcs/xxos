@@ -23,4 +23,6 @@ pub use addr_space::{
     PAGE_MASK,
     PAGE_SIZE,
     activate_space,
+    map_portal,
+    PROTAL_VPN,
 };

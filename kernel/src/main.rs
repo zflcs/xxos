@@ -22,17 +22,18 @@ extern crate alloc;
 use crate::{
     fsimpl::{read_all, FS},
     task::process::Process, consoleimpl::init_console,
-    mmimpl::{KERNEL_SPACE, activate_space},
+    mmimpl::{KERNEL_SPACE, activate_space, map_portal, PROTAL_VPN},
 };
-use kernel_vm::page_table::{VmFlags, Sv39, PPN, MmuMeta, VPN};
 use printlib::log;
 use easy_fs::{FSManager, OpenFlags};
 
-use processorimpl::{init_processor, processor, PROCESSORS};
+use processorimpl::{init_processor, processor};
 use riscv::register::*;
 use sbi_rt::*;
 use xmas_elf::ElfFile;
 use config::MAX_HART;
+use kernel_context::foreign::MultislotPortal;
+
 /// Supervisor 汇编入口。
 ///
 /// 设置栈并跳转到 Rust。
@@ -103,13 +104,7 @@ extern "C" fn primary_main() -> ! {
     mmimpl::init_kern_space();
     
     // 传送门映射到内核地址空间
-    for i in 0..MAX_HART {
-        unsafe{ KERNEL_SPACE.get_mut().unwrap().map_portal(
-            VPN::<Sv39>::new( PROCESSORS[i].portal_vpn ),
-            PPN::<Sv39>::new( &PROCESSORS[i].portal as *const _ as usize >> Sv39::PAGE_BITS),
-            VmFlags::build_from_str("XWRV"),
-        ) }
-    }
+    map_portal(unsafe{ KERNEL_SPACE.get_mut().unwrap() });
     // log::debug!("{:?}", unsafe { KERNEL_SPACE.get().unwrap() });
 
     // 初始化完毕，通过 hsm 启动副 cpu
@@ -144,9 +139,10 @@ fn secondary_main() {
 }
 
 fn run_task() {
+    let portal = unsafe { MultislotPortal::init_transit(PROTAL_VPN.base().val(), MAX_HART) };
     loop {
         if let Some(task) = processor().find_next() {
-            task.execute(&mut processor().portal, processor().portal_transit);
+            task.execute(portal, hart_id());
             match scause::read().cause() {
                 scause::Trap::Exception(scause::Exception::UserEnvCall) => {
                     use syscall::{SyscallId as Id, SyscallResult as Ret};

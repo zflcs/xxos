@@ -1,6 +1,5 @@
 ﻿// use crate::config::MAX_HART;
-use crate::mmimpl::{PAGE, Sv39Manager, from_elf, PAGE_SIZE};
-use crate::processorimpl::{ PROCESSORS};
+use crate::mmimpl::{PAGE, Sv39Manager, from_elf, PAGE_SIZE, map_portal};
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::{alloc::Layout};
@@ -15,7 +14,6 @@ use xmas_elf::{
     header::{self, HeaderPt2, Machine},
     ElfFile,
 };
-use crate::config::MAX_HART;
 
 #[derive(Eq, PartialEq, Debug, Clone, Copy, Hash, Ord, PartialOrd)]
 pub struct TaskId(usize);
@@ -119,14 +117,7 @@ impl Process {
         let satp = (8 << 60) | address_space.root_ppn().val();
         *context.sp_mut() = 1 << 38;
         // 添加异界传送门映射
-        for i in 0..MAX_HART {
-            address_space.map_portal(
-                // VPN::MAX, 
-                VPN::<Sv39>::new( unsafe{PROCESSORS[i].portal_vpn }),
-                PPN::<Sv39>::new( unsafe{&PROCESSORS[i].portal} as *const _ as usize >> Sv39::PAGE_BITS),
-                VmFlags::build_from_str("XWRV"),
-            );
-        }
+        map_portal(&mut address_space);
         Some(Self {
             pid: TaskId::generate(),
             parent: TaskId(usize::MAX),
@@ -142,7 +133,7 @@ impl Process {
         })
     }
 
-    pub fn execute(&mut self, portal: &mut ForeignPortal, portal_transit: usize) {
-        unsafe { self.context.execute(portal, portal_transit) };
+    pub fn execute(&mut self, portal: &mut impl ForeignPortal, cache_key: usize) {
+        unsafe { self.context.execute(portal, cache_key) };
     }
 }

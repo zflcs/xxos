@@ -5,6 +5,7 @@
 #![deny(warnings, missing_docs)]
 
 /// 不同地址空间的上下文控制。
+#[cfg(feature = "foreign")]
 pub mod foreign;
 
 /// 线程上下文。
@@ -37,13 +38,25 @@ impl LocalContext {
     ///
     /// 切换到用户态时会打开内核中断。
     #[inline]
-    pub const fn user(entry: usize) -> Self {
+    pub const fn user(pc: usize) -> Self {
         Self {
             sctx: 0,
             x: [0; 31],
             supervisor: false,
             interrupt: true,
-            sepc: entry,
+            sepc: pc,
+        }
+    }
+
+    /// 初始化指定入口的内核上下文。
+    #[inline]
+    pub const fn thread(pc: usize, interrupt: bool) -> Self {
+        Self {
+            sctx: 0,
+            x: [0; 31],
+            supervisor: true,
+            interrupt,
+            sepc: pc,
         }
     }
 
@@ -95,6 +108,12 @@ impl LocalContext {
         self.sepc
     }
 
+    /// 修改上下文的 pc。
+    #[inline]
+    pub fn pc_mut(&mut self) -> &mut usize {
+        &mut self.sepc
+    }
+
     /// 将 pc 移至下一条指令。
     ///
     /// # Notice
@@ -114,18 +133,19 @@ impl LocalContext {
     pub unsafe fn execute(&mut self) -> usize {
         let mut sstatus = build_sstatus(self.supervisor, self.interrupt);
         core::arch::asm!(
-            "   csrw sscratch, {sscratch}
-                csrw sepc    , {sepc}
-                csrw sstatus , {sstatus}
-                addi sp, sp, -8
-                sd   ra, (sp)
-                call {execute_naked}
-                ld   ra, (sp)
-                addi sp, sp,  8
-                csrr {sepc}   , sepc
-                csrr {sstatus}, sstatus
+            "   csrrw {sscratch}, sscratch, {sscratch}
+                csrw  sepc    , {sepc}
+                csrw  sstatus , {sstatus}
+                addi  sp, sp, -8
+                sd    ra, (sp)
+                call  {execute_naked}
+                ld    ra, (sp)
+                addi  sp, sp,  8
+                csrw  sscratch, {sscratch}
+                csrr  {sepc}   , sepc
+                csrr  {sstatus}, sstatus
             ",
-            sscratch      = in(reg) self,
+            sscratch      = in       (reg) self,
             sepc          = inlateout(reg) self.sepc,
             sstatus       = inlateout(reg) sstatus,
             execute_naked = sym execute_naked,
@@ -168,8 +188,8 @@ unsafe extern "C" fn execute_naked() {
             .endm
             .macro SAVE_ALL
                 sd x1, 1*8(sp)
-                .set n, 5
-                .rept 27
+                .set n, 3
+                .rept 29
                     SAVE %n
                     .set n, n+1
                 .endr
@@ -180,8 +200,8 @@ unsafe extern "C" fn execute_naked() {
             .endm
             .macro LOAD_ALL
                 ld x1, 1*8(sp)
-                .set n, 5
-                .rept 27
+                .set n, 3
+                .rept 29
                     LOAD %n
                     .set n, n+1
                 .endr

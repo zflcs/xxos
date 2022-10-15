@@ -1,7 +1,7 @@
 
 use super::Sv39Manager;
 use kernel_vm::{
-    page_table::{Sv39, VAddr, VmFlags, PPN, MmuMeta},
+    page_table::{Sv39, VAddr, VmFlags, PPN, MmuMeta, VPN},
     AddressSpace,
 };
 use spin::Once;
@@ -115,5 +115,19 @@ pub fn from_elf(elf: ElfFile) -> AddressSpace<Sv39, Sv39Manager> {
         );
     }
     address_space
+}
+
+
+// 异界传送门的虚拟地址
+pub const PROTAL_VPN: VPN::<Sv39> = VPN::<Sv39>::MAX;
+// 异界传送门的占位，从而不用动态申请内核空间
+static PORTAL: [u8; PAGE_SIZE] = [0; PAGE_SIZE];
+
+pub fn map_portal(space: &mut AddressSpace<Sv39, Sv39Manager>) {
+    space.map_portal(
+        PROTAL_VPN,
+        PPN::<Sv39>::new(&PORTAL as *const _ as usize >> Sv39::PAGE_BITS), 
+        VmFlags::build_from_str("XWRV"), 
+    );
 }
 
