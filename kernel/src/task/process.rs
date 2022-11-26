@@ -1,22 +1,15 @@
-﻿use crate::PROCESSOR;
-use crate::mmimpl::{PAGE, Sv39Manager, from_elf, PAGE_SIZE, PROC_INIT, SHARE_MODULE_SPACE, addrspace_add_module};
-use alloc::vec::Vec;
+﻿use crate::mmimpl::{PAGE, Sv39Manager, from_elf, elf_entry, PAGE_SIZE};
 use core::sync::atomic::{AtomicUsize, Ordering};
-use core::{alloc::Layout};
-use easy_fs::FileHandle;
-use kernel_context::{foreign::ForeignContext, foreign::ForeignPortal, LocalContext};
+use core::alloc::Layout;
+use kernel_context::{foreign::ForeignContext, LocalContext};
 use kernel_vm::{
     page_table::{MmuMeta, Sv39, VmFlags, PPN, VPN},
     AddressSpace,
 };
-use spin::{Mutex};
-use xmas_elf::{
-    header::{self, HeaderPt2, Machine},
-    ElfFile,
-};
-
-
-
+use task_manage::Task;
+use xmas_elf::ElfFile;
+use spin::Mutex;
+use crate::{PORTAL, PROTAL_TRANSIT};
 
 #[derive(Eq, PartialEq, Debug, Clone, Copy, Hash, Ord, PartialOrd)]
 pub struct ProcId(usize);
@@ -29,13 +22,19 @@ impl ProcId {
         ProcId(id)
     }
 
-    pub fn from(v: usize) -> Self {
-        Self(v)
-    }
+    // pub fn from(v: usize) -> Self {
+    //     Self(v)
+    // }
 
-    pub fn get_val(&self) -> usize {
-        self.0
-    }
+    // pub fn get_val(&self) -> usize {
+    //     self.0
+    // }
+}
+
+/// 进程内部可变数据
+pub struct ProcessInner {
+    pub context: ForeignContext,
+    pub address_space: AddressSpace<Sv39, Sv39Manager>,
 }
 
 /// 进程。
@@ -43,79 +42,15 @@ pub struct Process {
     /// 不可变
     pub pid: ProcId,
     /// 可变
-    pub parent: ProcId,
-    pub children: Vec<ProcId>,
-    pub context: ForeignContext,
-    pub address_space: AddressSpace<Sv39, Sv39Manager>,
-
-    // 文件描述符表
-    pub fd_table: Vec<Option<Mutex<FileHandle>>>,
-
-    // 堆指针
-    pub heapptr: usize,
-    // 真正的进程入口
-    pub entry: usize,
-
-    // 线程
-    // tid_alloc: RecycleAllocator,
-    // pub threads: Vec<Thread>,
+    pub inner: Mutex<ProcessInner>,
 }
 
 impl Process {
-    pub fn exec(&mut self, elf: ElfFile) {
-        let proc = Process::from_elf(elf).unwrap();
-        self.address_space = proc.address_space;
-        self.context = proc.context;
-        self.entry = proc.entry;
-        self.heapptr = proc.heapptr;
-    }
-
-    pub fn fork(&mut self) -> Option<Process> {
-        // 子进程 pid
-        let pid = ProcId::generate();
-        // 复制父进程地址空间
-        let parent_addr_space = &self.address_space;
-        let mut address_space: AddressSpace<Sv39, Sv39Manager> = AddressSpace::new();
-        parent_addr_space.cloneself(&mut address_space);
-        // 复制父进程上下文
-        let context = self.context.context.clone();
-        let satp = (8 << 60) | address_space.root_ppn().val();
-        let foreign_ctx = ForeignContext { context, satp };
-        self.children.push(pid);
-        // 复制父进程文件符描述表
-        let mut new_fd_table: Vec<Option<Mutex<FileHandle>>> = Vec::new();
-        for fd in self.fd_table.iter_mut() {
-            if let Some(file) = fd {
-                new_fd_table.push(Some(Mutex::new(file.get_mut().clone())));
-            } else {
-                new_fd_table.push(None);
-            }
-        }
-        Some(Self {
-            pid,
-            parent: self.pid,
-            children: Vec::new(),
-            context: foreign_ctx,
-            address_space,
-            fd_table: new_fd_table,
-            // threads: Vec::new(),
-            heapptr: self.heapptr,
-            entry: self.entry,
-        })
-    }
 
     // 默认将共享的主线程代码链接进来，创建时需要从符号表查找堆的位置
     pub fn from_elf(elf: ElfFile) -> Option<Self> {
         // elf 入口地址
-        let entry = match elf.header.pt2 {
-            HeaderPt2::Header64(pt2)
-                if pt2.type_.as_type() == header::Type::Executable
-                    && pt2.machine.as_machine() == Machine::RISC_V =>
-            {
-                pt2.entry_point as usize
-            }
-            _ => None?,
-        };
+        let entry = elf_entry(&elf)?;
         // 根据 elf 生成地址空间
         let mut address_space = from_elf(&elf);
         // 分配两个页当作用户态栈
@@ -131,73 +66,35 @@ impl Process {
                 VmFlags::build_from_str("U_WRV"),
             );
         }
-        // 链接共享库代码，在这里 translate 得到的并不是真正的物理地址
-        let unfi_sche = unsafe { SHARE_MODULE_SPACE.get("unfi-sche").unwrap() };
-        addrspace_add_module(&mut address_space, unfi_sche, true);
-        // printlib::log::info!("entry {:#x}", _entry);
-        // printlib::log::info!("memory {:#x}", elf.find_section_by_name(".bss").unwrap().address() as usize);
-        let heapptr = elf.find_section_by_name(".data").unwrap().address() as usize;
-        printlib::log::info!("heapptr {:#x}", heapptr);
-        // let mut exeptr = 0;
-
-        // for sym  in symbol_table(&elf){
-        //     let name = sym.get_name(&elf);
-        //     if name.unwrap() == "EXECUTOR"{
-        //         //println!("name {:?}  value:{:#x?}", name, sym.value());
-        //         exeptr = sym.value() as usize;
-        //     }
-        // }
-        // printlib::log::info!("exeptr {:#x}", exeptr);
-
-        let primary_enter: usize;
-        unsafe{ 
-            let proc_init: fn(usize, usize) -> usize = core::mem::transmute(PROC_INIT);
-            primary_enter = proc_init(entry, heapptr);
-            printlib::log::info!("primary_enter {:#x}", primary_enter);
-        }
-        // printlib::log::debug!("here");
-        let mut context = LocalContext::user(primary_enter);
+        let mut context = LocalContext::user(entry);
         let satp = (8 << 60) | address_space.root_ppn().val();
         *context.sp_mut() = 1 << 38;
-        // 添加异界传送门映射
-        address_space.map_portal(
-            VPN::MAX, 
-            PPN::<Sv39>::new(unsafe { &PROCESSOR.portal } as *const _ as usize >> Sv39::PAGE_BITS),
-            VmFlags::build_from_str("XWRV"),
-        );
         Some(Self {
             pid: ProcId::generate(),
-            parent: ProcId(usize::MAX),
-            children: Vec::new(),
-            context: ForeignContext { context, satp },
-            address_space,
-            fd_table: vec![
-                // Stdin
-                Some(Mutex::new(FileHandle::empty(true, false))),
-                // Stdout
-                Some(Mutex::new(FileHandle::empty(false, true))),
-            ],
-            heapptr,
-            entry,
-            // threads: Vec::new(),
-
+            inner: Mutex::new(
+                ProcessInner {
+                    context: ForeignContext { context, satp },
+                    address_space,
+                }
+            )
         })
     }
 
-    pub fn execute(&mut self, portal: &mut ForeignPortal, portal_transit: usize) {
-        unsafe { self.context.execute(portal, portal_transit) };
+}
+
+// unsafe impl Sync for Process {}
+// unsafe impl Send for Process {}
+
+unsafe impl Sync for ProcessInner {}
+unsafe impl Send for ProcessInner {}
+
+
+impl Task for Process {
+    fn execute(&self) {
+        unsafe {
+            self.inner.lock().context.execute(&mut PORTAL, PROTAL_TRANSIT);
+        }
     }
 }
 
-
-// use xmas_elf::sections::SectionData::SymbolTable64;
-// use xmas_elf::symbol_table::{Entry, Entry64};
-
-// fn symbol_table<'a>(elf: &ElfFile<'a>) -> &'a [Entry64] {
-//     match elf.find_section_by_name(".symtab").unwrap().get_data(&elf).unwrap()
-//     {
-//         SymbolTable64(dsym) => dsym,
-//         _ => panic!("corrupted .symtab"),
-//     }
-// }
 

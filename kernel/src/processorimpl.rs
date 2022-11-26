@@ -1,60 +1,33 @@
-use crate::task::process::{Process, ProcId};
-use alloc::collections::{BTreeMap, VecDeque};
-use kernel_context::foreign::ForeignPortal;
-use task_manage::{Manage, Processor};
+use alloc::{collections::VecDeque, boxed::Box};
+use task_manage::{Schedule, Processor, Task};
+use alloc::sync::Arc;
+use spin::Mutex;
+use lazy_static::lazy_static;
 
-pub static mut PROCESSOR: Processor<Process, ProcId, ProcManager> = Processor::new();
-
-pub fn init_processor() {
-    let manager = ProcManager::new();
-    // 异界传送门
-    let portal = ForeignPortal::new();
-    unsafe {
-        PROCESSOR.set_manager(manager);
-        PROCESSOR.set_portal(portal);
-    }
+lazy_static! {
+    pub static ref PROCESSOR: Arc<Mutex<Processor>> = 
+        Arc::new(Mutex::new(Processor::new(Arc::new(Mutex::new(Scheduler::new())))));
 }
 
-/// 任务管理器
-/// `tasks` 中保存所有的任务实体
-/// `ready_queue` 删除任务的实体
-pub struct ProcManager {
-    tasks: BTreeMap<ProcId, Process>,
-    ready_queue: VecDeque<ProcId>,
+/// 任务调度器
+pub struct Scheduler {
+    ready_queue: VecDeque<Arc<Box<dyn Task>>>,
 }
 
-impl ProcManager {
-    /// 新建任务管理器
+impl Scheduler {
     pub fn new() -> Self {
-        Self {
-            tasks: BTreeMap::new(),
-            ready_queue: VecDeque::new(),
-        }
+        Self { ready_queue: VecDeque::new() }
     }
 }
 
-impl Manage<Process, ProcId> for ProcManager {
-    /// 插入一个新任务
-    #[inline]
-    fn insert(&mut self, id: ProcId, task: Process) {
-        self.tasks.insert(id, task);
+impl Schedule for Scheduler {
+    type Item = Arc<Box<dyn Task>>;
+    fn add(&mut self, task: Self::Item) {
+        self.ready_queue.push_back(task)
     }
-    /// 根据 id 获取对应的任务
-    #[inline]
-    fn get_mut(&mut self, id: ProcId) -> Option<&mut Process> {
-        self.tasks.get_mut(&id)
-    }
-    /// 删除任务实体
-    #[inline]
-    fn delete(&mut self, id: ProcId) {
-        self.tasks.remove(&id);
-    }
-    /// 添加 id 进入调度队列
-    fn add(&mut self, id: ProcId) {
-        self.ready_queue.push_back(id);
-    }
-    /// 从调度队列中取出 id
-    fn fetch(&mut self) -> Option<ProcId> {
+
+    fn fetch(&mut self) -> Option<Self::Item> {
         self.ready_queue.pop_front()
     }
 }
+

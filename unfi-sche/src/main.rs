@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 #![feature(default_alloc_error_handler)]
-#![feature(naked_functions, asm_sym)]
+#![feature(naked_functions)]
 mod heap;
 mod thread;
 mod executor;

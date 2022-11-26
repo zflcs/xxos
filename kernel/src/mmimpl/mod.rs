@@ -20,10 +20,7 @@ pub use addr_space::{
     KERNEL_SPACE,
     init_kern_space,
     from_elf,
+    elf_entry,
     PAGE_MASK,
     PAGE_SIZE,
-    PROC_INIT,
-    SHARE_MODULE_SPACE,
-    addrspace_add_module,
-    load_module
 };

@@ -1,6 +1,6 @@
 #![no_std]
 #![no_main]
-#![feature(naked_functions, asm_sym, asm_const)]
+#![feature(naked_functions, asm_const)]
 #![feature(default_alloc_error_handler)]
 #![deny(warnings)]
 
@@ -22,15 +22,17 @@ use crate::{
     fsimpl::{read_all, FS},
     task::process::Process, consoleimpl::init_console,
 };
+use alloc::{sync::Arc, boxed::Box};
 use kernel_vm::page_table::{VmFlags, Sv39, PPN, MmuMeta, VPN};
-use printlib::log;
+// use printlib::log;
 use easy_fs::{FSManager, OpenFlags};
 
-use processorimpl::{init_processor, PROCESSOR};
-use riscv::register::*;
+use processorimpl::PROCESSOR;
+// use riscv::register::*;
 use sbi_rt::*;
 use xmas_elf::ElfFile;
-use mmimpl::{PROC_INIT, load_module};
+use kernel_context::foreign::ForeignPortal;
+use task_manage::Task;
 
 
 /// Supervisor 汇编入口。
@@ -56,6 +58,8 @@ unsafe extern "C" fn _start() -> ! {
     )
 }
 
+static mut PORTAL: ForeignPortal = ForeignPortal::EMPTY;
+const PROTAL_TRANSIT: usize = VPN::<Sv39>::MAX.base().val();
 
 
 extern "C" fn rust_main() -> ! {
@@ -71,74 +75,77 @@ extern "C" fn rust_main() -> ! {
     mmimpl::heap_test();
     mmimpl::init_kern_space();
 
-    // 初始化处理器，同时设置好异界传送门
-    init_processor();
     
     // 建立内核地址空间
     mmimpl::init_kern_space();
-    
+    // 异界传送门
+    unsafe { PORTAL = ForeignPortal::new(); }
     // 传送门映射到内核地址空间
     unsafe { mmimpl::KERNEL_SPACE.get_mut().unwrap().map_portal(
         VPN::MAX, 
-        PPN::<Sv39>::new( &PROCESSOR.portal as *const _ as usize >> Sv39::PAGE_BITS),
+        PPN::<Sv39>::new( &PORTAL as *const _ as usize >> Sv39::PAGE_BITS),
         VmFlags::build_from_str("XWRV"),
     )};
     // 加载应用程序
-    // TODO!
     println!("/**** APPS ****");
     for app in FS.readdir("").unwrap() {
+        let elf = read_all(FS.open(&app, OpenFlags::RDONLY).unwrap());
+        if let Some(process) = Process::from_elf(ElfFile::new(&elf.as_slice()).unwrap()) {
+            // 添加异界传送门映射            
+            unsafe { 
+                process.inner.lock().address_space.map_portal(
+                    VPN::MAX,
+                    PPN::<Sv39>::new(&PORTAL as *const _ as usize >> Sv39::PAGE_BITS),
+                    VmFlags::build_from_str("XWRV"),
+                );
+                PROCESSOR.lock().add_task(Arc::new(Box::new(process) as Box<dyn Task>));
+            };
+        }
         println!("{}", app);
     }
     println!("**************/");
-    load_module("unfi-sche");
-    {
-        let initproc = read_all(FS.open("initproc", OpenFlags::RDONLY).unwrap());
-        if let Some(process) = Process::from_elf(ElfFile::new(initproc.as_slice()).unwrap()) {
-            unsafe { PROCESSOR.add(process.pid, process) };
-        }
-    }
+    // const PROTAL_TRANSIT: usize = VPN::<Sv39>::MAX.base().val();
+    // loop {
+    //     if let Some(task) = unsafe { PROCESSOR.get_mut().unwrap().next_task() } {
+    //         match task {
+    //             Arc<Task::Proc(process) => {
+    //                 process.execute();
+    //                 match scause::read().cause() {
+    //                     scause::Trap::Exception(scause::Exception::UserEnvCall) => {
+    //                         use syscall::{SyscallId as Id, SyscallResult as Ret};
+    //                         let ctx = &mut process.inner.lock().context.context;
+    //                         ctx.move_next();
+    //                         let id: Id = ctx.a(7).into();
+    //                         let args = [ctx.a(0), ctx.a(1), ctx.a(2), ctx.a(3), ctx.a(4), ctx.a(5)];
+    //                         match syscall::handle(id, args) {
+    //                             Ret::Done(ret) => match id {
+    //                                 Id::EXIT => continue,
+    //                                 _ => {
+    //                                     let ctx = &mut process.inner.lock().context.context;
+    //                                     *ctx.a_mut(0) = ret as _;
+    //                                     unsafe { PROCESSOR.get_mut().unwrap().add_task(task) };
+    //                                 }
+    //                             },
+    //                             Ret::Unsupported(_) => {
+    //                                 log::info!("id = {id:?}");
+    //                             }
+    //                         }
+    //                     }
+    //                     e => {
+    //                         log::error!("unsupported trap: {e:?} stval = {:#x}", stval::read());
+    //                         log::error!("sepc = {:#x}", sepc::read());
+    //                     }
+    //                 }
+    //             },
+    //             _ => continue,
 
-    const PROTAL_TRANSIT: usize = VPN::<Sv39>::MAX.base().val();
-    loop {
-        if let Some(task) = unsafe { PROCESSOR.find_next() } {
-            unsafe{ 
-                let proc_init: fn(usize, usize) -> usize = core::mem::transmute(PROC_INIT);
-                proc_init(task.entry, task.heapptr);
-            }
-            task.execute(unsafe { &mut PROCESSOR.portal }, PROTAL_TRANSIT);
-            match scause::read().cause() {
-                scause::Trap::Exception(scause::Exception::UserEnvCall) => {
-                    use syscall::{SyscallId as Id, SyscallResult as Ret};
-                    let ctx = &mut task.context.context;
-                    ctx.move_next();
-                    let id: Id = ctx.a(7).into();
-                    let args = [ctx.a(0), ctx.a(1), ctx.a(2), ctx.a(3), ctx.a(4), ctx.a(5)];
-                    match syscall::handle(id, args) {
-                        Ret::Done(ret) => match id {
-                            Id::EXIT => unsafe { PROCESSOR.make_current_exited() },
-                            _ => {
-                                let ctx = &mut task.context.context;
-                                *ctx.a_mut(0) = ret as _;
-                                unsafe { PROCESSOR.make_current_suspend() };
-                            }
-                        },
-                        Ret::Unsupported(_) => {
-                            log::info!("id = {id:?}");
-                            unsafe { PROCESSOR.make_current_exited() };
-                        }
-                    }
-                }
-                e => {
-                    log::error!("unsupported trap: {e:?} stval = {:#x}", stval::read());
-                    log::error!("sepc = {:#x}", sepc::read());
-                    unsafe { PROCESSOR.make_current_exited() };
-                }
-            }
-        } else {
-            println!("no task");
-            break;
-        }
-    }
+    //         }
+            
+    //     } else {
+    //         println!("no task");
+    //         break;
+    //     }
+    // }
 
     system_reset(RESET_TYPE_SHUTDOWN, RESET_REASON_NO_REASON);
     unreachable!()

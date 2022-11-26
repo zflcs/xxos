@@ -11,6 +11,7 @@ customizable-buddy = "0.0.2"
 xmas-elf = "0.8.0"
 riscv = "0.8.0"
 spin = "0.9.4"
+lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
 
 
 linker = { path = "../linker" }
@@ -21,6 +22,7 @@ kernel-vm = { path = "../kernel-vm" }
 syscall = { path = "../syscall", features = ["kernel"] }
 task-manage = { path = "../task-manage" }
 easy-fs = { path = "../easy-fs" }
+
 
 [build-dependencies]
 linker = { path = "../linker" }
