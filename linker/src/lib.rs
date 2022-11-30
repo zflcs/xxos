@@ -23,9 +23,8 @@ SECTIONS {
         *(.data .data.*)
         *(.sdata .sdata.*)
     }
-    .bss : {
+    .bss : ALIGN(8) {
         *(.bss.uninit)
-        . = ALIGN(8);
         __bss = .;
         *(.bss .bss.*)
         *(.sbss .sbss.*)

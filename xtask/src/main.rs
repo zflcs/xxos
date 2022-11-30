@@ -1,13 +1,13 @@
-mod fs_pack;
-mod user;
-mod module;
+// mod fs_pack;
+// mod user;
+// mod module;
 
 #[macro_use]
 extern crate clap;
 
 use clap::Parser;
 use command_ext::{BinUtil, Cargo, CommandExt, Qemu};
-use module::build_module;
+// use module::build_module;
 use once_cell::sync::Lazy;
 use std::{
     path::{Path, PathBuf},
@@ -62,8 +62,8 @@ struct BuildArgs {
 
 impl BuildArgs {
     fn make(&self) -> PathBuf {
-        build_module(false);
-        user::build_for(false);
+        // build_module(false);
+        // user::build_for(false);
         
         let package = self.module.as_ref().unwrap();
         // 生成
@@ -117,28 +117,28 @@ impl QemuArgs {
             .arg("-kernel")
             .arg(objcopy(elf, true))
             .args(&["-smp", &self.smp.unwrap_or(1).to_string()])
-            .args(&["-serial", "mon:stdio"])
-            .args(&[
-                "-drive",
-                format!(
-                    "file={},if=none,format=raw,id=x0",
-                    TARGET
-                        .join(if self.build.release {
-                            "release"
-                        } else {
-                            "debug"
-                        })
-                        .join("fs.img")
-                        .into_os_string()
-                        .into_string()
-                        .unwrap()
-                )
-                .as_str(),
-            ])
-            .args(&[
-                "-device",
-                "virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0",
-            ]);
+            .args(&["-serial", "mon:stdio"]);
+            // .args(&[
+            //     "-drive",
+            //     format!(
+            //         "file={},if=none,format=raw,id=x0",
+            //         TARGET
+            //             .join(if self.build.release {
+            //                 "release"
+            //             } else {
+            //                 "debug"
+            //             })
+            //             .join("fs.img")
+            //             .into_os_string()
+            //             .into_string()
+            //             .unwrap()
+            //     )
+            //     .as_str(),
+            // ])
+            // .args(&[
+            //     "-device",
+            //     "virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0",
+            // ]);
         qemu.optional(&self.gdb, |qemu, gdb| {
             qemu.args(&["-S", "-gdb", &format!("tcp::{gdb}")]);
         })

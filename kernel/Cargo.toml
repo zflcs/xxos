@@ -2,7 +2,8 @@
 name = "kernel"
 version = "0.0.1"
 edition = "2021"
-authors = ["tkf2019 <kaifu6821@qq.com>"]
+authors = ["zflcs <1491657576@qq.com>"]
+
 
 [dependencies]
 virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers", rev = "4ee80e5" }
@@ -22,6 +23,8 @@ kernel-vm = { path = "../kernel-vm" }
 syscall = { path = "../syscall", features = ["kernel"] }
 task-manage = { path = "../task-manage" }
 easy-fs = { path = "../easy-fs" }
+fast-trap = { path = "../fast-trap", features = ["riscv-s"] }
+log = "0.4.17"
 
 
 [build-dependencies]
