@@ -12,7 +12,8 @@ members = [
     "linker",
     "unfi-sche",
     "runtime",
-    "fast-trap"
+    "fast-trap",
+    "testproc"
 ]
 default-members = ["xtask"]
 

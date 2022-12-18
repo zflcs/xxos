@@ -1,5 +1,13 @@
 [package]
 name = "utils"
-version = "0.0.1"
+version = "0.0.0"
 edition = "2021"
-authors = ["YdrMaster <ydrml@hotmail.com>"]
+authors = ["zflcs <zhaofangliang@foxmail.com>"]
+
+[dependencies]
+syn = "1.0"
+quote = "1.0"
+
+
+[lib]
+proc-macro = true

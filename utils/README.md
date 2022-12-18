@@ -1,3 +1,4 @@
 ﻿# utils
 
-一些零散的函数。
+### 过程宏帮助完成 `dyn trait -> struct` 
+

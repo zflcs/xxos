@@ -1,9 +1,13 @@
+use core::any::Any;
+
 
 
 /// Task trait
 pub trait Task: Send + Sync {
     /// 执行任务
     fn execute(&self);
+    /// 抽象成 Any
+    fn as_any(&self) -> &dyn Any;
 }
 
 
