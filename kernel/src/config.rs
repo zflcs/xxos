@@ -1,1 +1,0 @@
-pub const STACK_SIZE: usize = 0x2000;

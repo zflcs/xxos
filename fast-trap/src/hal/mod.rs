@@ -1,13 +1,19 @@
-﻿mod riscv;
-#[cfg(feature = "riscv-m")]
-#[macro_use]
-mod riscv_m;
-#[cfg(feature = "riscv-s")]
-#[macro_use]
-mod riscv_s;
+mod riscv;
 
+use core::alloc::Layout;
 pub use riscv::*;
-#[cfg(feature = "riscv-m")]
-pub use riscv_m::*;
-#[cfg(feature = "riscv-s")]
-pub use riscv_s::*;
+
+/// 在栈顶保留上下文的空间
+#[naked]
+pub unsafe extern "C" fn skip_context() {
+    const LAYOUT: Layout = Layout::new::<FlowContext>();
+    core::arch::asm!(
+        "   addi sp, sp, {size}
+            andi sp, sp, {mask}
+            ret
+        ",
+        size = const -(LAYOUT.size() as isize),
+        mask = const !(LAYOUT.align() as isize - 1) ,
+        options(noreturn)
+    )
+}

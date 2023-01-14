@@ -1,9 +1,17 @@
+// {
+//     "rust-analyzer.cargo.target": "riscv64gc-unknown-none-elf",
+//     // "rust-analyzer.cargo.features": [
+//     //     "s-mode"
+//     // ],
+//     // Prevent "can't find crate for `test`" error on no_std
+//     // Ref: https://github.com/rust-lang/vscode-rust/issues/729
+//     "rust-analyzer.checkOnSave.enable": true
+// }
 {
-    "rust-analyzer.cargo.target": "riscv64gc-unknown-none-elf",
-    // "rust-analyzer.cargo.features": [
-    //     "s-mode"
-    // ],
-    // Prevent "can't find crate for `test`" error on no_std
-    // Ref: https://github.com/rust-lang/vscode-rust/issues/729
-    "rust-analyzer.checkOnSave.enable": false
+	"rust-analyzer.checkOnSave.enable": true,
+	"rust-analyzer.checkOnSave.allTargets": false,
+	"rust-analyzer.checkOnSave.extraArgs": [
+			"--target",
+			"riscv64gc-unknown-none-elf"
+	]
 }

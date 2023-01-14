@@ -2,21 +2,12 @@
 members = [
     "xtask",
     "kernel",
-    "printlib",
-    "task-manage",
-    "kernel-context",
-    "kernel-vm",
-    "user",
-    "syscall",
+    "console",
     "utils",
     "linker",
-    "unfi-sche",
-    "runtime",
+    "config",
     "fast-trap",
-    "testproc"
+    "vmm",
 ]
 default-members = ["xtask"]
 
-[profile.release]
-opt-level = "s"
-debug = true

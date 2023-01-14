@@ -6,26 +6,17 @@ authors = ["zflcs <1491657576@qq.com>"]
 
 
 [dependencies]
-virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers", rev = "4ee80e5" }
-sbi-rt = "0.0.1"
-customizable-buddy = "0.0.2"
-xmas-elf = "0.8.0"
-riscv = "0.8.0"
+sbi-rt = { version = "0.0.2", features = ["legacy"] }
+riscv = "0.10.0"
 spin = "0.9.4"
 lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
-
+log = "0.4.17"
+rcore-console = "0.0.0"
 
 linker = { path = "../linker" }
-printlib = { path = "../printlib" }
-utils = { path = "../utils" }
-kernel-context = { path = "../kernel-context" }
-kernel-vm = { path = "../kernel-vm" }
-syscall = { path = "../syscall", features = ["kernel"] }
-task-manage = { path = "../task-manage" }
-easy-fs = { path = "../easy-fs" }
-fast-trap = { path = "../fast-trap", features = ["riscv-s"] }
-log = "0.4.17"
-
+config = { path = "../config"}
+fast-trap = { path = "../fast-trap"}
+vmm = { path = "../vmm"}
 
 [build-dependencies]
 linker = { path = "../linker" }

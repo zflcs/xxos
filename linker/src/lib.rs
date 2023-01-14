@@ -3,7 +3,10 @@
 #![no_std]
 #![deny(warnings, missing_docs)]
 
+use core::{fmt, fmt::{Formatter, Debug}};
+
 /// 链接脚本。
+/// 
 pub const SCRIPT: &[u8] = b"\
 OUTPUT_ARCH(riscv)
 ENTRY(_start)
@@ -11,75 +14,131 @@ SECTIONS {
     . = 0x80200000;
     .text : {
         *(.text.entry)
+        . = ALIGN(4K);
+        svdso = .;
+        *(.text.vdso);
+        . = ALIGN(4K);
+        evdso = .;
+        . = ALIGN(4K);
+        strampoline = .;
+        *(.text.fast_handler);
+        . = ALIGN(4K);
+        etrampoline = .;
         *(.text .text.*)
     }
     .rodata : ALIGN(4K) {
-        __rodata = .;
+        rodata = .;
         *(.rodata .rodata.*)
         *(.srodata .srodata.*)
     }
     .data : ALIGN(4K) {
-        __data = .;
+        data = .;
         *(.data .data.*)
         *(.sdata .sdata.*)
     }
-    .bss : ALIGN(8) {
-        *(.bss.uninit)
-        __bss = .;
+    .bss : ALIGN(4K) {
+        sstack = .;
+        *(.bss.stack)
+        . = ALIGN(4K);
+        bss = .;
         *(.bss .bss.*)
         *(.sbss .sbss.*)
     }
-    __end = .;
+    . = ALIGN(4K);
+    end = .;
 }";
 
-/// 内核地址信息。
-#[derive(Debug)]
-pub struct KernelLayout {
-    /// 代码段开头。
-    pub text: usize,
-    /// 只读数据段开头。
-    pub rodata: usize,
-    /// 数据段开头。
-    pub data: usize,
-    /// .bss 段开头。
-    bss: usize,
-    /// 内核结束位置。
+/// 返回段落
+pub struct Paragraph {
+    /// 段起始地址
+    pub start: usize,
+    /// 段结束地址
     pub end: usize,
 }
 
-impl KernelLayout {
-    /// 非零初始化，避免 bss。
-    pub const INIT: Self = Self {
-        text: usize::MAX,
-        rodata: usize::MAX,
-        data: usize::MAX,
-        bss: usize::MAX,
-        end: usize::MAX,
-    };
-
-    /// 定位内核布局。
-    #[inline]
-    pub fn locate() -> Self {
-        extern "C" {
-            fn _start();
-            fn __rodata();
-            fn __data();
-            fn __bss();
-            fn __end();
-        }
-
-        Self {
-            text: _start as _,
-            rodata: __rodata as _,
-            data: __data as _,
-            bss: __bss as _,
-            end: __end as _,
-        }
-    }
-
-    /// 清零 .bss 段。
-    #[inline]
-    pub unsafe fn zero_bss(&self) {
-        r0::zero_bss::<u64>(self.bss as _, self.end as _);
+impl Debug for Paragraph {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_fmt(format_args!("start:{:#x} end:{:#x}", self.start, self.end))
     }
 }
+
+/// 代码段
+#[inline]
+pub fn locate_text() -> Paragraph {
+    extern "C" {
+        fn _start();
+        fn rodata();
+    }
+    Paragraph { start: _start as _, end: rodata as _ }
+}
+
+/// 只读数据段
+#[inline]
+pub fn locate_rodata() -> Paragraph {
+    extern "C" {
+        fn rodata();
+        fn data();
+    }
+    Paragraph { start: rodata as _, end: data as _ }
+}
+
+/// 数据段
+#[inline]
+pub fn locate_data() -> Paragraph {
+    extern "C" {
+        fn data();
+        fn sstack();
+    }
+    Paragraph { start: data as _, end: sstack as _ }
+}
+
+/// bss 段
+#[inline]
+pub fn locate_bss() -> Paragraph {
+    extern "C" {
+        fn bss();
+        fn end();
+    }
+    Paragraph { start: bss as _, end: end as _ }
+}
+
+/// 返回 stack 段
+#[inline]
+pub fn locate_stack() -> Paragraph {
+    extern "C" {
+        fn sstack();
+        fn bss();
+    }
+    Paragraph { start: sstack as _, end: bss as _ }
+}
+
+/// 返回 trampoline 段
+#[inline]
+pub fn locate_trampoline() -> Paragraph {
+    extern "C" {
+        fn strampoline();
+        fn etrampoline();
+    }
+    Paragraph { start: strampoline as _, end: etrampoline as _ }
+}
+
+/// vdso 段
+#[inline]
+pub fn locate_vdso() -> Paragraph {
+    extern "C" {
+        fn svdso();
+        fn evdso();
+    }
+    Paragraph { start: svdso as _, end: evdso as _ }
+}
+
+/// 清零 .bss 段。
+#[inline]
+pub unsafe fn zero_bss() {
+    extern "C" {
+        fn bss();
+        fn end();
+    }
+    r0::zero_bss::<u64>(bss as _, end as _);
+}
+

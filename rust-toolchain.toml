@@ -2,3 +2,5 @@
 channel = "nightly"
 components = ["llvm-tools-preview"]
 targets = ["riscv64gc-unknown-none-elf"]
+dynamic-linking = ["true"]
+linker = ["rust-lld"]
