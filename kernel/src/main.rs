@@ -4,6 +4,7 @@
 #![deny(warnings)]
 
 mod console;
+mod trap;
 
 #[macro_use]
 extern crate rcore_console;
@@ -11,8 +12,8 @@ extern crate rcore_console;
 
 use sbi_rt::*;
 use config::STACK_SIZE;
-use fast_trap::{Stack, skip_context};
-// use riscv::register::*;
+use fast_trap::{Stack, skip_context, FlowContext};
+use trap::kern_process;
 
 #[link_section = ".bss.stack"]
 static mut STACK: Stack = Stack([0; STACK_SIZE]);
@@ -45,6 +46,15 @@ extern "C" fn rust_main() -> ! {
     console::init_console();
     vmm::init();
     println!("vmm init done");
+    let sp = usize::MAX - core::mem::size_of::<FlowContext>() + 1;
+    unsafe {
+        core::arch::asm!(
+            "mv sp, {sp}",
+            "j {kern_process}",
+            sp = in(reg) sp,
+            kern_process = sym kern_process,
+        );
+    }
     system_reset(Shutdown, NoReason);
     unreachable!()
 }

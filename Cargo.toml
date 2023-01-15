@@ -8,6 +8,7 @@ members = [
     "config",
     "fast-trap",
     "vmm",
+    "task",
 ]
 default-members = ["xtask"]
 

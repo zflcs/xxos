@@ -21,7 +21,7 @@ SECTIONS {
         evdso = .;
         . = ALIGN(4K);
         strampoline = .;
-        *(.text.fast_handler);
+        *(.text.trampoline);
         . = ALIGN(4K);
         etrampoline = .;
         *(.text .text.*)
