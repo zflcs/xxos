@@ -9,6 +9,7 @@ members = [
     "fast-trap",
     "vmm",
     "task",
+    "vdso",
 ]
 default-members = ["xtask"]
 

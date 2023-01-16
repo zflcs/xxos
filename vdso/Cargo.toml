@@ -1,13 +1,8 @@
 [package]
-name = "fast-trap"
+name = "vdso"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-log = "0.4.17"
-riscv = "0.10.0"
-
-config ={ path = "../config"}
-vmm = { path = "../vmm"}

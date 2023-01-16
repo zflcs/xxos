@@ -1,6 +1,6 @@
 use super::{PhysAddr, PhysPageNum};
 use core::{fmt, fmt::{Debug, Formatter}};
-use config::MEMORY_END;
+use config::{MEMORY_END, STACK_SIZE, PAGE_SIZE};
 use alloc::vec::Vec;
 use buddy_system_allocator::LockedFrameAllocator;
 
@@ -16,6 +16,13 @@ pub fn init_frame_allocator() {
         PhysAddr::from(end as usize).ceil().0,
         PhysAddr::from(MEMORY_END).floor().0,
     );
+}
+
+pub fn stack_alloc() -> Option<usize> {
+    FRAME_ALLOCATOR
+        .lock()
+        .alloc(STACK_SIZE / PAGE_SIZE)
+        .map(|ppn| ppn * PAGE_SIZE)
 }
 
 pub fn frame_alloc() -> Option<FrameTracker> {

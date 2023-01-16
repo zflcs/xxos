@@ -67,7 +67,7 @@ impl MemorySet {
         self.areas.push(map_area);
     }
     /// Mention that trampoline is not collected by areas.
-    fn map_trampoline(&mut self) {
+    pub fn map_trampoline(&mut self) {
         let strampoline = locate_trampoline().start;
         self.page_table.map(
             VirtAddr::from(TRAMPOLINE).into(),
@@ -76,8 +76,7 @@ impl MemorySet {
         );
     }
     /// 映射栈
-    fn map_stack(&mut self) {
-        let sstack = locate_stack().start;
+    pub fn map_stack(&mut self, sstack: usize) {
         for i in 0..(STACK_SIZE / PAGE_SIZE) {
             // println!("{:#x}-{:#x}", STACK_START + i * PAGE_SIZE, sstack + i * PAGE_SIZE);
             self.page_table.map(
@@ -87,12 +86,25 @@ impl MemorySet {
             );
         }
     }
+    /// 映射 vdso 段
+    pub fn map_vdso(&mut self) {
+        let vdso_para= locate_vdso();
+        self.push(
+            MapArea::new(
+                (vdso_para.start).into(),
+                (vdso_para.end).into(),
+                MapType::Identical,
+                MapPermission::R | MapPermission::X | MapPermission::U,
+            ),
+            None,
+        );
+    }
     /// Without kernel stacks.
     pub fn new_kernel() -> Self {
         let mut memory_set = Self::new_bare();
         // map trampoline
         memory_set.map_trampoline();
-        memory_set.map_stack();
+        memory_set.map_stack(locate_stack().start);
         // map kernel sections
         let text_para = locate_text();
         log::info!("mapping .text section {:#x?}", text_para);

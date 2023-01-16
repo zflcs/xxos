@@ -6,4 +6,12 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+spin = "0.9.4"
+xmas-elf = "0.9.0"
+log = "0.4.17"
+
 fast-trap = {path = "../fast-trap"}
+vmm = { path = "../vmm"}
+config = {path = "../config"}
+vdso = {path = "../vdso"}
+linker = {path = "../linker"}

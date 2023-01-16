@@ -17,6 +17,8 @@ linker = { path = "../linker" }
 config = { path = "../config"}
 fast-trap = { path = "../fast-trap"}
 vmm = { path = "../vmm"}
+task = {path = "../task"}
+vdso = {path = "../vdso"}
 
 [build-dependencies]
 linker = { path = "../linker" }

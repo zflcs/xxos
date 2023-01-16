@@ -47,14 +47,18 @@ extern "C" fn rust_main() -> ! {
     vmm::init();
     println!("vmm init done");
     let sp = usize::MAX - core::mem::size_of::<FlowContext>() + 1;
+    let ra = kern_process as usize;
     unsafe {
         core::arch::asm!(
-            "mv sp, {sp}",
-            "j {kern_process}",
+            "sd {sp}, -1*8(x0)",
+            "sd {ra}, -2*8(x0)",
             sp = in(reg) sp,
-            kern_process = sym kern_process,
+            ra = in(reg) ra,
         );
     }
+    fast_trap::trap_init();
+    let init_proc = task::Process::new();
+    init_proc.execute();
     system_reset(Shutdown, NoReason);
     unreachable!()
 }
