@@ -19,6 +19,7 @@ fast-trap = { path = "../fast-trap"}
 vmm = { path = "../vmm"}
 task = {path = "../task"}
 vdso = {path = "../vdso"}
+syscall = {path = "../syscall"}
 
 [build-dependencies]
 linker = { path = "../linker" }

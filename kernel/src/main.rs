@@ -9,11 +9,15 @@ mod trap;
 #[macro_use]
 extern crate rcore_console;
 
+extern crate syscall;
+
 
 use sbi_rt::*;
 use config::STACK_SIZE;
 use fast_trap::{Stack, skip_context, FlowContext};
 use trap::kern_process;
+use syscall::*;
+
 
 #[link_section = ".bss.stack"]
 static mut STACK: Stack = Stack([0; STACK_SIZE]);
@@ -57,8 +61,14 @@ extern "C" fn rust_main() -> ! {
         );
     }
     fast_trap::trap_init();
-    let init_proc = task::Process::new();
-    init_proc.execute();
+    log::info!("{:?}", SyscallId::write);
+    read!(1, 2, 3);
+    crate::write!(1);
+    // write("sss");
+    // log::debug!("{}", read!());
+    // log::debug!("{}", crate::write!());
+    // let init_proc = task::Process::new();
+    // init_proc.execute();
     system_reset(Shutdown, NoReason);
     unreachable!()
 }

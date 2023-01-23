@@ -10,6 +10,8 @@ members = [
     "vmm",
     "task",
     "vdso",
+    "syscall",
+    "syscall/syscall_macro",
 ]
 default-members = ["xtask"]
 
