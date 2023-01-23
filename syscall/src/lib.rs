@@ -1,26 +1,24 @@
 //! 实现内核的系统调用以及暴露给用户态的系统调用
 
 #![no_std]
-#![feature(concat_idents)]
-#![allow(warnings)]
 
 extern crate syscall_macro;
 
 
 mod kernel;
-mod user;
-
-use syscall_macro::SyscallMacro;
+pub use kernel::*;
+use syscall_macro::{GenSysMacro, GenSysTrait};
 
 #[repr(usize)]
-#[derive(Debug)]
-#[derive(SyscallMacro)]
+#[derive(Debug, GenSysMacro, GenSysTrait)]
 pub enum SyscallId{
     #[arguments(args = "fd, buffer_ptr, buffer_len")]
-	read = 4,
+	Read = 4,
     #[arguments(args = "ffff")]
-    write = 5,
+    Write = 5,
 }
+
+
 
 macro_rules! syscall {
     ($($name:ident($a:ident, $($b:ident, $($c:ident, $($d:ident, $($e:ident, $($f:ident, $($g:ident)?)?)?)?)?)?);)+) => {

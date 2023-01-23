@@ -48,6 +48,7 @@ extern "C" fn rust_main() -> ! {
     unsafe { linker::zero_bss(); }
     // 初始化 `console`
     console::init_console();
+    syscall::init_syscall(&Syscall);
     vmm::init();
     println!("vmm init done");
     let sp = usize::MAX - core::mem::size_of::<FlowContext>() + 1;
@@ -61,7 +62,10 @@ extern "C" fn rust_main() -> ! {
         );
     }
     fast_trap::trap_init();
-    log::info!("{:?}", SyscallId::write);
+    println!("kernel syscall {:?}", syscall_handler(SyscallId::Write, [0; 6]));
+    println!("kernel syscall {:?}", syscall_handler(SyscallId::Read, [0; 6]));
+
+    log::info!("{:?}", SyscallId::Write);
     read!(1, 2, 3);
     crate::write!(1);
     // write("sss");
@@ -80,6 +84,16 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     println!("{info}");
     system_reset(Shutdown, SystemFailure);
     unreachable!()
+}
+
+pub struct Syscall;
+impl SyscallTrait for Syscall {
+    fn read(&self,_fd:usize,_buffer_ptr:usize,_buffer_len:usize) -> isize {
+        -1
+    }
+    fn write(&self,_ffff:usize) -> isize {
+        -2
+    }
 }
 
 
